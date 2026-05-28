@@ -1,0 +1,31 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: operator-elevated-legitimate-role
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets"]
+  verbs: ["create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["services", "configmaps"]
+  verbs: ["create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: operator-elevated-legitimate-binding
+  namespace: default
+subjects:
+- kind: ServiceAccount
+  name: operator-elevated-legitimate-sa
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: operator-elevated-legitimate-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: operator-elevated-legitimate-sa
+  namespace: default

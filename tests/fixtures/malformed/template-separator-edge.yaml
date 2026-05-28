@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: template-separator-edge
+  namespace: default
+data:
+  template: |
+    This is a multiline string with Go templates
+    {{ .Values.someSetting }}
+    ---
+    This looks like a separator but it's inside a string
+    {{ range .Values.items }}
+    - item: {{ . }}
+    ---
+    {{ end }}

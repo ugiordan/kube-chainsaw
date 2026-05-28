@@ -1,0 +1,27 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: escalation-create-bindings-role
+rules:
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["clusterrolebindings", "rolebindings"]
+  verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: escalation-create-bindings-binding
+subjects:
+- kind: ServiceAccount
+  name: escalation-create-bindings-sa
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: escalation-create-bindings-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: escalation-create-bindings-sa
+  namespace: default

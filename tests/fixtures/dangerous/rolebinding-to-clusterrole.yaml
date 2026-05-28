@@ -1,0 +1,40 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rolebinding-to-clusterrole-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: rolebinding-to-clusterrole-binding
+  namespace: default
+subjects:
+- kind: ServiceAccount
+  name: rolebinding-to-clusterrole-sa
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: rolebinding-to-clusterrole-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rolebinding-to-clusterrole-sa
+  namespace: default
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rolebinding-to-clusterrole-pod
+  namespace: default
+spec:
+  serviceAccountName: rolebinding-to-clusterrole-sa
+  containers:
+  - name: app
+    image: busybox
+    command: ["sleep", "3600"]

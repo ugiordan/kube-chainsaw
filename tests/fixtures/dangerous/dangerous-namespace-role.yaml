@@ -1,0 +1,29 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dangerous-namespace-role
+  namespace: default
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dangerous-namespace-role-binding
+  namespace: default
+subjects:
+- kind: ServiceAccount
+  name: dangerous-namespace-role-sa
+  namespace: default
+roleRef:
+  kind: Role
+  name: dangerous-namespace-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dangerous-namespace-role-sa
+  namespace: default

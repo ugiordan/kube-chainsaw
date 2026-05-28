@@ -1,0 +1,9 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: syntax-errors-role
+  this is not valid yaml: {[}]
+rules:
+- apiGroups: [""]
+  resources: "this should be an array"
+  verbs: [unclosed bracket

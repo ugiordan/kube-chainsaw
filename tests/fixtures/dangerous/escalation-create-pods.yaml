@@ -1,0 +1,27 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: escalation-create-pods-role
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: escalation-create-pods-binding
+subjects:
+- kind: ServiceAccount
+  name: escalation-create-pods-sa
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: escalation-create-pods-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: escalation-create-pods-sa
+  namespace: default
