@@ -6,9 +6,10 @@ Set up a local development environment for contributing to kube-chainsaw.
 
 ## Prerequisites
 
-- Python 3.9 or later
+- Go 1.21 or later
 - Git
 - (Optional) Docker for testing the container image
+- (Optional) golangci-lint for linting
 
 ---
 
@@ -21,26 +22,23 @@ git clone https://github.com/ugiordan/kube-chainsaw.git
 cd kube-chainsaw
 ```
 
-Create a virtual environment:
+Install dependencies:
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
+go mod download
 ```
 
-Install in editable mode with dev dependencies:
+Build the binary:
 
 ```bash
-pip install -e ".[dev]"
+go build -o kube-chainsaw ./cmd/kube-chainsaw
 ```
 
-This installs:
+Install to GOPATH/bin:
 
-- `kube-chainsaw` package in editable mode
-- `pytest` for testing
-- `black` for code formatting
-- `ruff` for linting
-- `mypy` for type checking
+```bash
+go install ./cmd/kube-chainsaw
+```
 
 ---
 
@@ -49,42 +47,48 @@ This installs:
 Run the full test suite:
 
 ```bash
-pytest
+go test ./...
 ```
 
 Run with coverage:
 
 ```bash
-pytest --cov=kube_chainsaw --cov-report=html
-open htmlcov/index.html  # View coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
 ```
 
 Run specific tests:
 
 ```bash
-pytest tests/test_rules.py::test_wildcard_verbs
+go test ./pkg/analyzer -run TestWildcardVerbs
 ```
 
 ---
 
 ## Code Quality
 
-Format code with Black:
+Format code:
 
 ```bash
-black .
+go fmt ./...
 ```
 
-Lint with Ruff:
+Vet code:
 
 ```bash
-ruff check .
+go vet ./...
 ```
 
-Type-check with mypy:
+Lint with golangci-lint (if installed):
 
 ```bash
-mypy kube_chainsaw/
+golangci-lint run
+```
+
+Install golangci-lint:
+
+```bash
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 ```
 
 ---
@@ -93,33 +97,33 @@ mypy kube_chainsaw/
 
 ```
 kube-chainsaw/
-├── kube_chainsaw/          # Main package
-│   ├── __init__.py
-│   ├── cli.py              # CLI entry point
-│   ├── scanner.py          # Scanner class
-│   ├── graph.py            # Graph builder
-│   ├── rules/              # Detection rules
-│   │   ├── __init__.py
-│   │   ├── base.py         # Base rule class
-│   │   ├── kc001_wildcard_verbs.py
-│   │   ├── kc002_wildcard_resources.py
-│   │   └── ...
-│   ├── reporters/          # Output formatters
-│   │   ├── console.py
-│   │   ├── json.py
-│   │   └── sarif.py
-│   └── models/             # Data models
-│       ├── finding.py
-│       ├── resource.py
-│       └── location.py
-├── tests/                  # Test suite
-│   ├── fixtures/           # Test YAML manifests
-│   ├── test_scanner.py
-│   ├── test_rules.py
-│   └── test_reporters.py
-├── docs/                   # Sphinx documentation
-├── site/                   # MkDocs Material site
-├── pyproject.toml          # Project metadata
+├── cmd/
+│   └── kube-chainsaw/
+│       └── main.go           # CLI entry point
+├── pkg/
+│   ├── analyzer/
+│   │   ├── analyzer.go       # Main analysis logic
+│   │   └── rules.go          # Detection rule definitions
+│   ├── loader/
+│   │   └── loader.go         # YAML manifest loading
+│   ├── models/
+│   │   └── models.go         # Data structures
+│   ├── reporter/
+│   │   ├── console.go        # Console output
+│   │   ├── json.go           # JSON output
+│   │   └── sarif.go          # SARIF output
+│   └── suppression/
+│       └── suppression.go    # Suppression loading and matching
+├── internal/
+│   └── version/
+│       └── version.go        # Version metadata
+├── tests/
+│   └── fixtures/             # Test YAML manifests
+├── site/                     # MkDocs Material site
+├── .goreleaser.yaml          # Release configuration
+├── .github/
+│   └── action.yml            # GitHub Action
+├── go.mod
 └── README.md
 ```
 
@@ -130,13 +134,13 @@ kube-chainsaw/
 Test the CLI during development:
 
 ```bash
-python -m kube_chainsaw.cli scan tests/fixtures/
+go run ./cmd/kube-chainsaw k8s/
 ```
 
-Or use the installed script:
+Or use the built binary:
 
 ```bash
-kube-chainsaw scan tests/fixtures/
+./kube-chainsaw k8s/
 ```
 
 ---
@@ -155,7 +159,7 @@ Open `http://127.0.0.1:8000/` to preview.
 Build static HTML:
 
 ```bash
-mkdocs build
+mkdocs build --strict
 ```
 
 ---
@@ -171,37 +175,44 @@ docker build -t kube-chainsaw:dev .
 Run the container:
 
 ```bash
-docker run --rm -v $(pwd)/tests/fixtures:/fixtures kube-chainsaw:dev scan /fixtures
+docker run --rm -v $(pwd)/tests/fixtures:/fixtures kube-chainsaw:dev /fixtures
 ```
+
+---
+
+## Release Process
+
+Releases are automated via goreleaser on Git tags:
+
+1. Tag a release:
+
+```bash
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+2. GitHub Actions builds binaries, Docker images, and creates a GitHub Release
+3. Artifacts include:
+   - Linux/macOS/Windows binaries (amd64, arm64)
+   - Docker image pushed to ghcr.io
+   - Checksums file
 
 ---
 
 ## Debugging
 
-Use pytest with pdb:
+Use Delve for debugging:
 
 ```bash
-pytest --pdb
+go install github.com/go-delve/delve/cmd/dlv@latest
+dlv debug ./cmd/kube-chainsaw -- k8s/
 ```
 
 Enable verbose logging:
 
 ```bash
-kube-chainsaw scan tests/fixtures/ --verbose
+kube-chainsaw k8s/ --verbose
 ```
-
----
-
-## Pre-Commit Hooks
-
-Install pre-commit hooks:
-
-```bash
-pip install pre-commit
-pre-commit install
-```
-
-This runs Black, Ruff, and mypy on every commit.
 
 ---
 
@@ -209,4 +220,4 @@ This runs Black, Ruff, and mypy on every commit.
 
 - [Adding Rules](rules.md): Create new detection rules
 - [Architecture](../architecture/overview.md): Understand the codebase structure
-- [Python API](../reference/api.md): Library usage examples
+- [Go API](../reference/go-api.md): Library usage examples

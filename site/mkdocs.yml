@@ -72,12 +72,11 @@ nav:
     - Understanding Findings: guides/findings.md
     - Custom Exclusions: guides/exclusions.md
     - Suppressions: guides/suppressions.md
-    - Plugin System: guides/plugins.md
   - Reference:
     - CLI Commands: reference/cli.md
     - Detection Rules: reference/rules.md
     - Output Formats: reference/output-formats.md
-    - Python API: reference/api.md
+    - Go Library: reference/go-api.md
   - Architecture:
     - Design Overview: architecture/overview.md
   - Contributing:

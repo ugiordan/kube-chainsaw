@@ -14,18 +14,16 @@ kube-chainsaw analyzes Kubernetes RBAC manifests by building a directed graph of
 ```mermaid
 graph LR
     A[YAML Files] --> B[Loader]
-    B --> C[Graph Builder]
-    C --> D[Analyzers]
-    D --> E[Reporters]
-    E --> F[SARIF + Console]
+    B --> C[Analyzer]
+    C --> D[Reporters]
+    D --> E[SARIF + Console]
 ```
 
 **Pipeline stages:**
 
-1. **Loader**: Parses YAML manifests from directories, stdin, or individual files
-2. **Graph Builder**: Constructs a directed graph of Roles, ClusterRoles, Bindings, and ServiceAccounts
-3. **Analyzers**: Runs 15 detection rules to identify privilege escalation chains and misconfigurations
-4. **Reporters**: Outputs findings in SARIF, JSON, or human-readable console format
+1. **Loader** (pkg/loader): Parses YAML manifests from directories and files
+2. **Analyzer** (pkg/analyzer): Runs 15 detection rules to identify privilege escalation chains and misconfigurations
+3. **Reporters** (pkg/reporter): Outputs findings in SARIF, JSON, or human-readable console format
 
 ---
 
@@ -80,25 +78,35 @@ kube-chainsaw is the only tool that performs **static graph traversal** to detec
 Scan a directory of Kubernetes manifests:
 
 ```bash
-kube-chainsaw scan manifests/
+kube-chainsaw manifests/
 ```
 
 **Output:**
 
 ```
-KC-001: Wildcard verbs in ClusterRole 'admin-role' (HIGH)
-  Location: manifests/roles.yaml:5:1
-  ServiceAccounts bound: admin-sa (via admin-binding)
-  
-KC-007: Privilege escalation chain detected (CRITICAL)
-  Path: viewer-sa -> viewer-role -> pods/exec -> cluster-admin
-  Steps: 3
+=== CRITICAL ===
+
+  [KC-013] Pod running with cluster-admin privileges
+    File:        manifests/deployment.yaml
+    Resource:    default/Deployment/operator
+    Description: Deployment "operator" uses ServiceAccount "admin-sa" which is bound to cluster-admin
+    Remediation: Never use cluster-admin for pod service accounts; create a scoped role
+
+=== HIGH ===
+
+  [KC-002] Wildcard verb access
+    File:        manifests/roles.yaml
+    Resource:    ClusterRole/admin-role
+    Description: Role "admin-role" has dangerous verb "*"
+    Remediation: Replace wildcard (*) verbs with specific verbs needed
+
+Total: 2 findings [1 CRITICAL, 1 HIGH]
 ```
 
 Generate SARIF for GitHub Code Scanning:
 
 ```bash
-kube-chainsaw scan manifests/ --format sarif -o results.sarif
+kube-chainsaw manifests/ --format sarif --output results.sarif
 ```
 
 ---

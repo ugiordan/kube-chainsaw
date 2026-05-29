@@ -6,7 +6,7 @@ kube-chainsaw integrates with GitHub Actions, GitLab CI, and other CI platforms 
 
 ## GitHub Actions
 
-### Basic Workflow
+### Using the GitHub Action (Recommended)
 
 ```yaml
 name: RBAC Security Scan
@@ -22,16 +22,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Run kube-chainsaw
+        uses: ugiordan/kube-chainsaw@v1
         with:
-          python-version: '3.11'
+          paths: k8s/ deploy/
+          fail-on: HIGH
+          format: sarif
+          output: kube-chainsaw.sarif
+      
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: kube-chainsaw.sarif
+        if: always()
+```
+
+### Manual Installation
+
+```yaml
+name: RBAC Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rbac-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       
       - name: Install kube-chainsaw
-        run: pip install kube-chainsaw
+        run: |
+          curl -sL https://github.com/ugiordan/kube-chainsaw/releases/latest/download/kube-chainsaw_linux_amd64.tar.gz | tar xz
+          sudo mv kube-chainsaw /usr/local/bin/
       
       - name: Scan manifests
-        run: kube-chainsaw scan k8s/ --format sarif -o kube-chainsaw.sarif
+        run: kube-chainsaw k8s/ --format sarif --output kube-chainsaw.sarif
       
       - name: Upload SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
@@ -46,18 +74,17 @@ Fail the build only on CRITICAL findings:
 
 ```yaml
 - name: Scan manifests
-  run: kube-chainsaw scan k8s/ --fail-on-severity critical
+  run: kube-chainsaw k8s/ --fail-on CRITICAL
 ```
 
-### Using the GitHub Action
+Or using the action:
 
 ```yaml
 - name: Run kube-chainsaw
-  uses: ugiordan/kube-chainsaw-action@v1
+  uses: ugiordan/kube-chainsaw@v1
   with:
-    directory: k8s/
-    fail-on-severity: high
-    exclude-dirs: 'vendor,test'
+    paths: k8s/
+    fail-on: CRITICAL
 ```
 
 ---
@@ -69,11 +96,13 @@ Fail the build only on CRITICAL findings:
 ```yaml
 rbac-scan:
   stage: test
-  image: python:3.11-slim
+  image: alpine:latest
   before_script:
-    - pip install kube-chainsaw
+    - apk add --no-cache curl tar
+    - curl -sL https://github.com/ugiordan/kube-chainsaw/releases/latest/download/kube-chainsaw_linux_amd64.tar.gz | tar xz
+    - mv kube-chainsaw /usr/local/bin/
   script:
-    - kube-chainsaw scan k8s/ --format sarif -o gl-sast-report.json
+    - kube-chainsaw k8s/ --format sarif --output gl-sast-report.json
   artifacts:
     reports:
       sast: gl-sast-report.json
@@ -85,13 +114,15 @@ rbac-scan:
 ```yaml
 rbac-scan:
   stage: test
-  image: python:3.11-slim
+  image: alpine:latest
   before_script:
-    - pip install kube-chainsaw
+    - apk add --no-cache curl tar
+    - curl -sL https://github.com/ugiordan/kube-chainsaw/releases/latest/download/kube-chainsaw_linux_amd64.tar.gz | tar xz
+    - mv kube-chainsaw /usr/local/bin/
   script:
-    - kube-chainsaw scan k8s/ --suppressions .kube-chainsaw-suppressions.yaml
+    - kube-chainsaw k8s/ --suppressions suppressions.yaml
   allow_failure:
-    exit_codes: 1  # Allow HIGH findings, fail on CRITICAL
+    exit_codes: 1  # Allow findings below CRITICAL
 ```
 
 ---
@@ -105,10 +136,18 @@ pipeline {
     agent any
     
     stages {
+        stage('Install kube-chainsaw') {
+            steps {
+                sh '''
+                    curl -sL https://github.com/ugiordan/kube-chainsaw/releases/latest/download/kube-chainsaw_linux_amd64.tar.gz | tar xz
+                    sudo mv kube-chainsaw /usr/local/bin/
+                '''
+            }
+        }
+        
         stage('RBAC Security Scan') {
             steps {
-                sh 'pip install kube-chainsaw'
-                sh 'kube-chainsaw scan k8s/ --format json -o results.json'
+                sh 'kube-chainsaw k8s/ --format json --output results.json'
             }
         }
     }
@@ -125,16 +164,19 @@ pipeline {
 
 ## Pre-Commit Hook
 
-Add to `.pre-commit-config.yaml`:
+Create a local hook in `.pre-commit-config.yaml`:
 
 ```yaml
 repos:
-  - repo: https://github.com/ugiordan/kube-chainsaw
-    rev: v1.0.0
+  - repo: local
     hooks:
       - id: kube-chainsaw
-        args: ['--fail-on-severity', 'high']
+        name: kube-chainsaw RBAC scan
+        entry: kube-chainsaw
+        language: system
+        args: ['--fail-on', 'HIGH']
         files: '^k8s/.*\.ya?ml$'
+        pass_filenames: false
 ```
 
 Run locally:
@@ -143,6 +185,8 @@ Run locally:
 pre-commit install
 pre-commit run --all-files
 ```
+
+This assumes `kube-chainsaw` is installed and available in your PATH.
 
 ---
 
@@ -159,7 +203,7 @@ kube-chainsaw uses exit codes for CI gates:
 **Example:** Fail only on CRITICAL findings:
 
 ```bash
-kube-chainsaw scan k8s/ --fail-on-severity critical
+kube-chainsaw k8s/ --fail-on CRITICAL
 echo $?  # 0 if no CRITICAL findings, 1 if CRITICAL found, 2 on error
 ```
 
@@ -167,17 +211,19 @@ echo $?  # 0 if no CRITICAL findings, 1 if CRITICAL found, 2 on error
 
 ## Dual Output Mode
 
-kube-chainsaw can write SARIF to a file while also printing human-readable output to the console:
+kube-chainsaw can write output to a file while also printing a summary to stdout. Specify `--output` to write to a file and `--format` for stdout:
 
 ```bash
-kube-chainsaw scan k8s/ --format sarif -o results.sarif
+kube-chainsaw k8s/ --format console --output results.json
 ```
 
-This command:
+Or write SARIF to file while printing console output:
 
-1. Writes SARIF to `results.sarif`
-2. Prints human-readable summary to stdout
-3. Returns exit code based on `--fail-on-severity`
+```bash
+kube-chainsaw k8s/ --format sarif --output results.sarif
+```
+
+When `--output` is specified without `--output-format`, the format is inferred from the file extension (`.sarif` or `.json`).
 
 Perfect for CI pipelines where you need both machine-readable artifacts and human-readable logs.
 
@@ -185,19 +231,19 @@ Perfect for CI pipelines where you need both machine-readable artifacts and huma
 
 ## Suppression Files in CI
 
-Commit `.kube-chainsaw-suppressions.yaml` to version control:
+Commit `suppressions.yaml` to version control:
 
 ```yaml
+suppressions:
 - rule_id: KC-001
   resource_name: admin-cluster-role
-  justification: "Required for cluster operator"
-  expiry: "2027-06-01"
+  reason: "Required for cluster operator"
 ```
 
 Reference it in CI:
 
 ```bash
-kube-chainsaw scan k8s/ --suppressions .kube-chainsaw-suppressions.yaml
+kube-chainsaw k8s/ --suppressions suppressions.yaml
 ```
 
 See [Suppressions Guide](suppressions.md) for full syntax.

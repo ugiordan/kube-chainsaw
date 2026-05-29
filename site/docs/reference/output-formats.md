@@ -6,39 +6,37 @@ kube-chainsaw supports three output formats: console, JSON, and SARIF.
 
 ## Console (Default)
 
-Human-readable output with color-coded severity levels and actionable recommendations.
+Human-readable output grouped by severity (CRITICAL first, INFO last).
 
 **Usage:**
 
 ```bash
-kube-chainsaw scan k8s/
+kube-chainsaw k8s/
 ```
 
 **Example output:**
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- kube-chainsaw scan results
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+=== CRITICAL ===
 
-[CRITICAL] KC-007: Privilege escalation chain detected
-  Path: viewer-sa -> viewer-role -> pods/exec -> admin-sa-token
-  Steps: 3
-  Impact: ServiceAccount 'viewer-sa' can escalate to cluster-admin
-  Recommendation: Remove pods/exec permission from viewer-role
+  [KC-013] Pod running with cluster-admin privileges
+    File:        k8s/deployment.yaml
+    Resource:    default/Deployment/admin-deployment
+    Description: Deployment "admin-deployment" uses ServiceAccount "admin-sa" which is bound to cluster-admin via ClusterRoleBinding "admin-binding"
+    Remediation: Never use cluster-admin for pod service accounts; create a scoped role
 
-[HIGH] KC-001: Wildcard verbs in ClusterRole 'pod-manager'
-  Location: k8s/roles.yaml:15:11
-  Impact: Grants create, delete, patch, and escalate permissions
-  Recommendation: Replace '*' with explicit verbs: ['get', 'list', 'watch']
-  ServiceAccounts bound: admin-sa (via admin-binding)
+=== HIGH ===
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Summary: 2 findings (1 critical, 1 high, 0 medium, 0 low)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  [KC-001] Wildcard resource access
+    File:        k8s/roles.yaml
+    Resource:    ClusterRole/pod-manager
+    Description: Role "pod-manager" uses wildcard apiGroups, granting access to all API groups including CRDs
+    Remediation: Replace wildcard (*) resources with explicit resource names
 
-Exit code: 1 (findings with severity >= high)
+Total: 2 findings [1 CRITICAL, 1 HIGH]
 ```
+
+Findings are sorted by severity, then by rule ID within each severity group.
 
 ---
 
@@ -49,46 +47,44 @@ Machine-readable JSON output for custom integrations.
 **Usage:**
 
 ```bash
-kube-chainsaw scan k8s/ --format json -o results.json
+kube-chainsaw k8s/ --format json --output results.json
 ```
 
 **Example output:**
 
 ```json
 {
-  "version": "1.0",
   "findings": [
     {
       "rule_id": "KC-001",
-      "severity": "high",
-      "message": "Wildcard verbs in ClusterRole 'pod-manager'",
-      "location": {
-        "file": "k8s/roles.yaml",
-        "line": 15,
-        "column": 11
-      },
-      "resource": {
-        "kind": "ClusterRole",
-        "name": "pod-manager",
-        "namespace": null
-      },
-      "impact": "Grants create, delete, patch, and escalate permissions",
-      "recommendation": "Replace '*' with explicit verbs: ['get', 'list', 'watch']",
-      "metadata": {
-        "bound_service_accounts": ["admin-sa"],
-        "bindings": ["admin-binding"]
-      }
+      "severity": "HIGH",
+      "title": "Wildcard resource access",
+      "file": "k8s/roles.yaml",
+      "description": "Role \"pod-manager\" uses wildcard apiGroups, granting access to all API groups including CRDs",
+      "remediation": "Replace wildcard (*) resources with explicit resource names",
+      "resource_kind": "ClusterRole",
+      "resource_name": "pod-manager",
+      "resource_namespace": "",
+      "fingerprint": "a3f2e1b...",
+      "suppressed": false
     }
-  ],
-  "summary": {
-    "total": 1,
-    "critical": 0,
-    "high": 1,
-    "medium": 0,
-    "low": 0
-  }
+  ]
 }
 ```
+
+**Fields:**
+
+- `rule_id`: Rule identifier (KC-001 through KC-015)
+- `severity`: CRITICAL, HIGH, WARNING, INFO
+- `title`: Short description of the rule
+- `file`: Path to the manifest file
+- `description`: Detailed description of the finding
+- `remediation`: How to fix the issue
+- `resource_kind`: Kind of the resource (ClusterRole, Role, etc.)
+- `resource_name`: Name of the resource
+- `resource_namespace`: Namespace (empty for cluster-scoped resources)
+- `fingerprint`: SHA256 hash for deduplication
+- `suppressed`: Whether the finding is suppressed
 
 ---
 
@@ -99,14 +95,14 @@ Static Analysis Results Interchange Format (SARIF) for GitHub Code Scanning, Git
 **Usage:**
 
 ```bash
-kube-chainsaw scan k8s/ --format sarif -o results.sarif
+kube-chainsaw k8s/ --format sarif --output results.sarif
 ```
 
 **Example output:**
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
   "version": "2.1.0",
   "runs": [
     {
@@ -118,22 +114,11 @@ kube-chainsaw scan k8s/ --format sarif -o results.sarif
           "rules": [
             {
               "id": "KC-001",
-              "name": "WildcardVerbs",
               "shortDescription": {
-                "text": "Wildcard verbs in Role or ClusterRole"
-              },
-              "fullDescription": {
-                "text": "Detects verbs: ['*'] in RBAC rules, which grants excessive permissions"
+                "text": "Wildcard resource access"
               },
               "help": {
-                "text": "Replace '*' with explicit verbs like ['get', 'list', 'watch']"
-              },
-              "defaultConfiguration": {
-                "level": "error"
-              },
-              "properties": {
-                "precision": "high",
-                "security-severity": "8.0"
+                "text": "Replace wildcard (*) resources with explicit resource names"
               }
             }
           ]
@@ -144,23 +129,22 @@ kube-chainsaw scan k8s/ --format sarif -o results.sarif
           "ruleId": "KC-001",
           "level": "error",
           "message": {
-            "text": "Wildcard verbs in ClusterRole 'pod-manager'"
+            "text": "Role \"pod-manager\" uses wildcard apiGroups, granting access to all API groups including CRDs"
           },
           "locations": [
             {
               "physicalLocation": {
                 "artifactLocation": {
                   "uri": "k8s/roles.yaml"
-                },
-                "region": {
-                  "startLine": 15,
-                  "startColumn": 11
                 }
+              },
+              "message": {
+                "text": "ClusterRole/pod-manager"
               }
             }
           ],
-          "fingerprints": {
-            "kube-chainsaw/v1": "KC-001:ClusterRole:pod-manager:k8s/roles.yaml:15:11"
+          "partialFingerprints": {
+            "kube-chainsaw/v1": "a3f2e1b..."
           }
         }
       ]
@@ -171,27 +155,32 @@ kube-chainsaw scan k8s/ --format sarif -o results.sarif
 
 **SARIF Features:**
 
-- **Fingerprints**: Stable identifiers for deduplication across scans
-- **Security-severity**: Numeric score for severity ranking (0.0-10.0)
-- **Help URLs**: Links to documentation for each rule
-- **Code flows**: Multi-step privilege escalation paths (for KC-007, KC-008)
+- **Fingerprints**: Stable identifiers (SHA256) for deduplication across scans
+- **SARIF level mapping**: CRITICAL/HIGH → `error`, WARNING → `warning`, INFO → `note`
+- **Suppressions**: Suppressed findings are marked with `suppression` kind `inSource`
 
 ---
 
 ## Dual Output Mode
 
-When using `--format sarif` with `-o FILE`, kube-chainsaw writes SARIF to the file and prints a console summary to stdout:
+When using `--output`, kube-chainsaw writes to a file and prints to stdout:
 
 ```bash
-kube-chainsaw scan k8s/ --format sarif -o results.sarif
+kube-chainsaw k8s/ --output results.json
 ```
 
 **Behavior:**
 
-- `results.sarif`: SARIF JSON for machine consumption
-- `stdout`: Human-readable summary for CI logs
+- `results.json`: JSON output
+- `stdout`: Console format (unless `--quiet`)
 
-This is the recommended mode for CI pipelines.
+Specify different formats for file and stdout:
+
+```bash
+kube-chainsaw k8s/ --format console --output results.sarif --output-format sarif
+```
+
+This writes SARIF to the file and prints console output to stdout.
 
 ---
 
@@ -201,7 +190,7 @@ Upload SARIF to GitHub Code Scanning:
 
 ```yaml
 - name: Run kube-chainsaw
-  run: kube-chainsaw scan k8s/ --format sarif -o kube-chainsaw.sarif
+  run: kube-chainsaw k8s/ --format sarif --output kube-chainsaw.sarif
 
 - name: Upload SARIF
   uses: github/codeql-action/upload-sarif@v3
@@ -220,7 +209,7 @@ GitLab expects SARIF artifacts in the `sast` report type:
 ```yaml
 rbac-scan:
   script:
-    - kube-chainsaw scan k8s/ --format sarif -o gl-sast-report.json
+    - kube-chainsaw k8s/ --format sarif --output gl-sast-report.json
   artifacts:
     reports:
       sast: gl-sast-report.json

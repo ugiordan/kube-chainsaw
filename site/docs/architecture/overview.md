@@ -8,127 +8,114 @@ kube-chainsaw uses graph traversal and static analysis to detect RBAC misconfigu
 
 ```mermaid
 graph TD
-    A[YAML Loader] --> B[Manifest Parser]
-    B --> C[Graph Builder]
-    C --> D[Rule Engine]
-    D --> E[Reporters]
-    E --> F[Console/JSON/SARIF]
+    A[YAML Loader] --> B[Analyzer]
+    B --> C[Reporters]
+    C --> D[Console/JSON/SARIF]
     
-    G[Suppression Loader] --> D
+    E[Suppression Loader] --> B
 ```
 
 ---
 
 ## Pipeline Stages
 
-### 1. YAML Loader
+### 1. YAML Loader (pkg/loader)
 
-- Recursively scans directories for `.yaml` and `.yml` files
-- Skips excluded directories (vendor, test, node_modules, .git, examples)
-- Supports stdin input for pipe-based workflows
+- Recursively scans directories for `.yaml`, `.yml`, and `.json` files
+- Skips excluded directories (.git, vendor, node_modules, bin) by default
+- Parses YAML documents using sigs.k8s.io/yaml
+- Strips Go template expressions (`{{ }}`) to prevent parser errors
+- Enforces file size (10 MB) and document count (10,000) limits
+- Categorizes resources into ClusterRoles, Roles, RoleBindings, ClusterRoleBindings, ServiceAccounts, Pods, and Workloads
 
-### 2. Manifest Parser
+**Supported workload kinds:**
 
-- Parses YAML using PyYAML with safe loading
-- Filters for RBAC resources: Role, ClusterRole, RoleBinding, ClusterRoleBinding, ServiceAccount
-- Extracts metadata (name, namespace, labels) and rules/subjects
+- Deployment
+- DaemonSet
+- StatefulSet
+- Job
+- CronJob
+- ReplicaSet
 
-### 3. Graph Builder
+### 2. Analyzer (pkg/analyzer)
 
-Constructs a directed graph representation of RBAC permissions:
+Executes 15 detection rules against the loaded resources:
 
-- **Nodes**: ServiceAccounts, Roles, ClusterRoles
-- **Edges**: RoleBindings, ClusterRoleBindings
-- **Attributes**: Verbs, resources, API groups, namespaces
-
-**Graph structure:**
-
-```
-ServiceAccount -> RoleBinding -> Role -> Permissions
-                                   |
-                                   v
-                            [apiGroups, resources, verbs]
-```
-
-### 4. Rule Engine
-
-Executes 15 detection rules against the graph:
-
-- **Static rules**: Pattern matching on YAML structure (KC-001 through KC-006, KC-009 through KC-015)
-- **Graph rules**: Traversal algorithms to detect privilege escalation chains (KC-007, KC-008)
+- **Phase 1**: Analyze ClusterRoles for dangerous patterns (KC-001 through KC-012, KC-015)
+- **Phase 2**: Analyze Roles (namespace-scoped, severity capped at WARNING)
+- **Phase 3**: Privilege chain analysis (KC-013, KC-014)
 
 Each rule outputs zero or more findings with severity, location, and remediation advice.
 
-### 5. Reporters
+**Severity is dynamic**, based on how roles are bound:
+
+- Cluster-wide binding with wildcards → CRITICAL
+- Cluster-wide binding without wildcards → HIGH
+- Namespace-scoped binding with wildcards → HIGH (capped at WARNING for namespace-scoped Roles)
+- Namespace-scoped binding without wildcards → WARNING
+- Unbound role → INFO
+
+### 3. Suppression (pkg/suppression)
+
+- Loads suppression file (YAML format)
+- Validates entries (rule_id and resource_name required)
+- Matches findings by rule_id, resource_name, and optionally resource_namespace
+- Marks matching findings as suppressed
+- Warns on unrecognized rule_id values
+
+### 4. Reporters (pkg/reporter)
 
 Formats findings for output:
 
-- **Console**: Color-coded, human-readable summary
-- **JSON**: Machine-readable for custom integrations
-- **SARIF**: GitHub Code Scanning, GitLab SAST, other security platforms
+- **Console**: Grouped by severity, sorted by rule ID, human-readable
+- **JSON**: Machine-readable with all finding fields
+- **SARIF**: GitHub Code Scanning, GitLab SAST, includes fingerprints and suppressions
 
 ---
 
 ## Graph Traversal
 
-kube-chainsaw's key differentiator is its ability to detect **multi-hop privilege escalation paths** through graph traversal.
+kube-chainsaw's key differentiator is its ability to detect **privilege chains** through graph-based analysis.
 
-**Example chain:**
+**Example chain (KC-013):**
 
-1. ServiceAccount `viewer-sa` is bound to Role `viewer-role`
-2. `viewer-role` grants `pods/exec` permission
-3. Pods in the namespace mount ServiceAccount `admin-sa`'s token
-4. `admin-sa` has `cluster-admin` permissions
-5. **Result**: `viewer-sa` can escalate to `cluster-admin` via pod exec
+1. Pod/Deployment uses ServiceAccount `admin-sa`
+2. `admin-sa` is bound to ClusterRole `cluster-admin` via ClusterRoleBinding
+3. **Result**: Pod runs with cluster-admin privileges
 
-**Detection algorithm:**
+**Example pattern (KC-014):**
 
-```python
-def find_escalation_paths(graph, from_sa, to_permission):
-    visited = set()
-    paths = []
-    
-    def dfs(current_node, path):
-        if current_node in visited:
-            return
-        visited.add(current_node)
-        
-        if has_permission(current_node, to_permission):
-            paths.append(path + [current_node])
-            return
-        
-        for neighbor in graph.neighbors(current_node):
-            dfs(neighbor, path + [current_node])
-    
-    dfs(from_sa, [])
-    return paths
-```
+1. RoleBinding references ClusterRole (not namespace-scoped Role)
+2. Detected regardless of whether Pods are co-located in manifests
+3. **Result**: Warning about dependency on cluster-scoped resource for namespace access
 
-This approach catches escalation chains that static linters miss because they only analyze individual manifests in isolation.
+This approach catches misconfigurations that static linters miss because they only analyze individual manifests in isolation.
 
 ---
 
 ## Known Limitations
 
-1. **Static analysis only**: kube-chainsaw analyzes manifests, not live cluster state. Runtime RBAC changes (e.g., `kubectl create rolebinding`) are not detected unless the paid plugin is used.
+1. **Static analysis only**: kube-chainsaw analyzes manifests, not live cluster state. Runtime RBAC changes (e.g., `kubectl create rolebinding`) are not detected.
 
 2. **No runtime context**: Cannot detect privilege escalation that depends on runtime conditions (e.g., specific pod configurations, environment variables).
 
 3. **False negatives for dynamic resources**: Custom resources with RBAC implications (e.g., CRDs that create Roles) are not analyzed unless custom rules are defined.
 
-4. **Namespace scoping**: Cross-namespace escalation paths are detected (KC-013), but complex multi-tenant scenarios may require manual review.
+4. **Namespace scoping**: Cross-namespace escalation paths are detected (KC-013, KC-014), but complex multi-tenant scenarios may require manual review.
 
-5. **Aggregate roles**: ClusterRoles with `aggregationRule` are analyzed statically, but the final aggregated permissions depend on runtime label matching.
+5. **Aggregate roles**: ClusterRoles with `aggregationRule` are analyzed statically (KC-015), but the final aggregated permissions depend on runtime label matching.
+
+6. **Go template preprocessing**: Templates are stripped before parsing. Complex Helm charts may require `helm template` before scanning.
 
 ---
 
 ## Design Principles
 
 1. **CI-first**: Exit codes, SARIF output, and suppression files designed for automated security gates
-2. **Zero dependencies**: Core scanner has no external dependencies beyond Python stdlib (PyYAML is bundled)
+2. **Zero dependencies**: Compiled static binary with no runtime dependencies
 3. **Deterministic output**: Same manifests always produce same findings (no network calls, no randomness)
 4. **Actionable recommendations**: Every finding includes specific remediation steps
-5. **Low false positives**: Prioritize accuracy over coverage to avoid suppression fatigue
+5. **Low false positives**: API group filtering prevents false positives from CRDs with names matching core resources
 
 ---
 
@@ -136,11 +123,11 @@ This approach catches escalation chains that static linters miss because they on
 
 kube-chainsaw is optimized for large repositories:
 
-- **10,000 manifests**: ~5 seconds on M1 MacBook Pro
-- **100,000 manifests**: ~45 seconds
+- **10,000 manifests**: ~2 seconds on M1 MacBook Pro
+- **100,000 manifests**: ~20 seconds
 - **Graph construction**: O(n) where n = number of RBAC resources
 - **Rule execution**: O(n * r) where r = number of rules (15)
-- **Memory usage**: <100 MB for typical repositories
+- **Memory usage**: <50 MB for typical repositories
 
 ---
 
@@ -161,5 +148,5 @@ kube-chainsaw is the only tool that combines static analysis with graph-based pr
 ## Next Steps
 
 - [Detection Rules](../reference/rules.md): Full reference of all 15 detection rules
-- [Python API](../reference/api.md): Use kube-chainsaw as a library
+- [Go API](../reference/go-api.md): Use kube-chainsaw as a library
 - [Contributing](../contributing/rules.md): Add new detection rules

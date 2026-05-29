@@ -7,12 +7,12 @@ Complete reference for the `kube-chainsaw` command-line interface.
 ## Basic Usage
 
 ```bash
-kube-chainsaw scan [PATH] [OPTIONS]
+kube-chainsaw [paths...] [OPTIONS]
 ```
 
 **Arguments:**
 
-- `PATH`: Directory, file, or `-` for stdin (default: current directory)
+- `paths`: One or more directories or files to scan (required)
 
 ---
 
@@ -23,35 +23,23 @@ kube-chainsaw scan [PATH] [OPTIONS]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--exclude-dirs DIRS` | Comma-separated directory names to skip | `""` |
-| `--no-default-excludes` | Disable default exclusions (node_modules, vendor, test, .git, examples) | `false` |
-| `--stdin` | Read manifests from stdin | `false` |
+| `--no-default-excludes` | Disable default exclusions (.git, vendor, node_modules, bin) | `false` |
 
 ### Output Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--format FORMAT` | Output format: `console`, `json`, `sarif` | `console` |
-| `-o, --output FILE` | Write output to file (dual mode: SARIF to file, console to stdout) | `""` |
-| `--verbose` | Enable verbose logging (includes suppressed findings) | `false` |
-| `--quiet` | Suppress all output except errors | `false` |
+| `--format FORMAT` | Output format for stdout: `console`, `json`, `sarif` | `console` |
+| `--output FILE` | Write report to file | `""` |
+| `--output-format FORMAT` | Format for --output file: `json`, `sarif` (inferred from extension if omitted) | `""` |
+| `--quiet` | Suppress stdout output | `false` |
 
 ### Severity and Filtering
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--fail-on-severity LEVEL` | Exit with code 1 if findings at or above this level: `critical`, `high`, `medium`, `low` | `high` |
-| `--min-severity LEVEL` | Only report findings at or above this level | `low` |
-| `--suppressions FILE` | Path to suppression file (comma-separated for multiple files) | `.kube-chainsaw-suppressions.yaml` |
-
-### Plugin Options (Paid Addon)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--plugin-secrets` | Enable secret content analysis | `false` |
-| `--plugin-runtime` | Enable runtime cluster correlation | `false` |
-| `--custom-rules FILE` | Path to custom rules file | `""` |
-| `--license-key KEY` | Plugin license key (or use `KUBE_CHAINSAW_LICENSE_KEY` env var) | `""` |
-| `--kubeconfig PATH` | Path to kubeconfig for runtime analysis | `~/.kube/config` |
+| `--fail-on LEVEL` | Exit with code 1 if findings at or above this level: `CRITICAL`, `HIGH`, `WARNING`, `INFO` | `CRITICAL` |
+| `--suppressions FILE` | Path to suppression YAML file | `""` |
 
 ### Other Options
 
@@ -66,9 +54,9 @@ kube-chainsaw scan [PATH] [OPTIONS]
 
 | Code | Meaning |
 |------|---------|
-| `0` | No findings, or all findings below `--fail-on-severity` threshold |
-| `1` | Findings at or above `--fail-on-severity` threshold |
-| `2` | Scan error (invalid YAML, file not found, permission denied, etc.) |
+| `0` | No findings at or above `--fail-on` threshold, or all findings suppressed |
+| `1` | Findings at or above `--fail-on` threshold |
+| `2` | Runtime error (invalid arguments, file not found, permission denied, etc.) |
 
 ---
 
@@ -77,78 +65,102 @@ kube-chainsaw scan [PATH] [OPTIONS]
 ### Scan a directory with default settings:
 
 ```bash
-kube-chainsaw scan k8s/
+kube-chainsaw k8s/
+```
+
+### Scan multiple directories:
+
+```bash
+kube-chainsaw config/ deploy/ manifests/
 ```
 
 ### Fail only on CRITICAL findings:
 
 ```bash
-kube-chainsaw scan k8s/ --fail-on-severity critical
+kube-chainsaw k8s/ --fail-on CRITICAL
+```
+
+### Fail on HIGH or CRITICAL:
+
+```bash
+kube-chainsaw k8s/ --fail-on HIGH
+```
+
+### Generate JSON output to file:
+
+```bash
+kube-chainsaw k8s/ --format json --output results.json
 ```
 
 ### Generate SARIF for GitHub Code Scanning:
 
 ```bash
-kube-chainsaw scan k8s/ --format sarif -o results.sarif
+kube-chainsaw k8s/ --format sarif --output results.sarif
 ```
 
 This writes SARIF to `results.sarif` and prints a human-readable summary to stdout.
 
-### Scan from stdin:
-
-```bash
-cat manifests/*.yaml | kube-chainsaw scan --stdin
-```
-
 ### Exclude staging directories:
 
 ```bash
-kube-chainsaw scan k8s/ --exclude-dirs staging,dev
+kube-chainsaw k8s/ --exclude-dirs staging,dev
 ```
 
 ### Use custom suppression file:
 
 ```bash
-kube-chainsaw scan k8s/ --suppressions team-suppressions.yaml
+kube-chainsaw k8s/ --suppressions team-suppressions.yaml
 ```
 
-### Scan with verbose logging:
+### Quiet mode (no stdout, write to file only):
 
 ```bash
-kube-chainsaw scan k8s/ --verbose
-```
-
-### Quiet mode (errors only):
-
-```bash
-kube-chainsaw scan k8s/ --quiet --format json -o results.json
+kube-chainsaw k8s/ --quiet --output results.json
 ```
 
 ---
 
 ## Dual Output Behavior
 
-When using `--format sarif` with `-o FILE`, kube-chainsaw writes SARIF to the file and prints a human-readable summary to stdout:
+When using `--output`, kube-chainsaw can write to a file while also printing to stdout:
 
 ```bash
-kube-chainsaw scan k8s/ --format sarif -o results.sarif
+kube-chainsaw k8s/ --output results.json
 ```
 
-**Output:**
+**Behavior:**
 
-- `results.sarif`: SARIF JSON for machine consumption
-- `stdout`: Human-readable summary for CI logs
+- `results.json`: JSON output
+- `stdout`: Console format (unless `--quiet`)
+
+When `--format` is specified, it controls the stdout format. When `--output-format` is specified, it controls the file format. If `--output-format` is omitted, the format is inferred from the file extension (`.sarif` for SARIF, otherwise JSON).
 
 This dual output mode is designed for CI pipelines where you need both machine-readable artifacts and human-readable logs.
 
 ---
 
-## Environment Variables
+## File Size and Document Limits
 
-| Variable | Description |
-|----------|-------------|
-| `KUBE_CHAINSAW_LICENSE_KEY` | Plugin license key (alternative to `--license-key`) |
-| `KUBE_CHAINSAW_SUPPRESSIONS` | Default suppression file path (alternative to `--suppressions`) |
+kube-chainsaw enforces limits to prevent resource exhaustion:
+
+- **Max file size**: 10 MB per YAML file
+- **Max documents per file**: 10,000 YAML documents per file
+- **Suppression file size**: 1 MB max
+
+Files exceeding these limits are logged to stderr and skipped.
+
+---
+
+## Default Directory Exclusions
+
+By default, these directories are skipped:
+
+- `.git/`
+- `vendor/`
+- `node_modules/`
+- `bin/`
+
+Use `--no-default-excludes` to disable this behavior.
 
 ---
 

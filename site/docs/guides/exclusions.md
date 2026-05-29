@@ -8,13 +8,12 @@ kube-chainsaw provides directory and file exclusion options to skip vendor code,
 
 By default, kube-chainsaw skips these directories:
 
-- `node_modules/`
-- `vendor/`
 - `.git/`
-- `test/`, `tests/`, `_test/`
-- `examples/`
+- `vendor/`
+- `node_modules/`
+- `bin/`
 
-These exclusions prevent noise from third-party dependencies and test fixtures.
+These exclusions prevent noise from third-party dependencies and build artifacts.
 
 ---
 
@@ -23,19 +22,19 @@ These exclusions prevent noise from third-party dependencies and test fixtures.
 Use `--exclude-dirs` to add custom exclusions:
 
 ```bash
-kube-chainsaw scan k8s/ --exclude-dirs build,dist,tmp
+kube-chainsaw k8s/ --exclude-dirs build,dist,tmp
 ```
 
-Comma-separated directory names (not paths). The scanner will skip any directory with these names at any depth.
+Comma-separated directory names (not paths). The scanner will skip any directory with these names at any depth. Custom exclusions are added to the default list.
 
 ---
 
 ## Disabling Default Exclusions
 
-Use `--no-default-excludes` to scan all directories, including vendor and test folders:
+Use `--no-default-excludes` to scan all directories, including `.git`, vendor, and node_modules:
 
 ```bash
-kube-chainsaw scan k8s/ --no-default-excludes
+kube-chainsaw k8s/ --no-default-excludes
 ```
 
 This is useful for auditing third-party Helm charts or operator manifests.
@@ -47,16 +46,16 @@ This is useful for auditing third-party Helm charts or operator manifests.
 Add custom exclusions while keeping defaults:
 
 ```bash
-kube-chainsaw scan k8s/ --exclude-dirs staging,old-configs
+kube-chainsaw k8s/ --exclude-dirs staging,old-configs
 ```
 
 Override defaults completely:
 
 ```bash
-kube-chainsaw scan k8s/ --no-default-excludes --exclude-dirs vendor
+kube-chainsaw k8s/ --no-default-excludes --exclude-dirs vendor
 ```
 
-This scans `test/` and `examples/` but skips `vendor/`.
+This scans `.git/` and `bin/` but skips `vendor/`.
 
 ---
 
@@ -72,7 +71,7 @@ k8s/
     staging/     # Also excluded (name matches)
 ```
 
-To exclude a specific path (not just the directory name), use a suppression file with a `file_pattern` filter (see [Suppressions Guide](suppressions.md)).
+Directory exclusions apply at the filesystem level. To suppress findings from specific files without excluding them from loading, use a suppression file (see [Suppressions Guide](suppressions.md)).
 
 ---
 
@@ -81,19 +80,19 @@ To exclude a specific path (not just the directory name), use a suppression file
 ### Exclude staging and dev environments:
 
 ```bash
-kube-chainsaw scan k8s/ --exclude-dirs staging,dev
+kube-chainsaw k8s/ --exclude-dirs staging,dev
 ```
 
 ### Audit vendor Helm charts:
 
 ```bash
-kube-chainsaw scan charts/ --no-default-excludes --exclude-dirs test
+kube-chainsaw charts/ --no-default-excludes
 ```
 
 ### Scan only production manifests:
 
 ```bash
-kube-chainsaw scan k8s/prod/
+kube-chainsaw k8s/prod/
 ```
 
 ---

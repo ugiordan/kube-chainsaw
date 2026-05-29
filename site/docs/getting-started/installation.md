@@ -1,21 +1,48 @@
 # Installation
 
-kube-chainsaw is distributed as a Python package, Docker image, and GitHub Action.
+kube-chainsaw is a compiled Go binary distributed via GitHub Releases, Docker, and GitHub Action.
 
 ---
 
-## pip (Recommended)
+## Binary (Recommended)
 
-Install from PyPI:
+### Linux
 
 ```bash
-pip install kube-chainsaw
+curl -sL https://github.com/ugiordan/kube-chainsaw/releases/latest/download/kube-chainsaw_linux_amd64.tar.gz | tar xz
+sudo mv kube-chainsaw /usr/local/bin/
 ```
+
+### macOS
+
+```bash
+# Intel
+curl -sL https://github.com/ugiordan/kube-chainsaw/releases/latest/download/kube-chainsaw_darwin_amd64.tar.gz | tar xz
+sudo mv kube-chainsaw /usr/local/bin/
+
+# Apple Silicon
+curl -sL https://github.com/ugiordan/kube-chainsaw/releases/latest/download/kube-chainsaw_darwin_arm64.tar.gz | tar xz
+sudo mv kube-chainsaw /usr/local/bin/
+```
+
+### Windows
+
+Download the latest release from [GitHub Releases](https://github.com/ugiordan/kube-chainsaw/releases) and extract `kube-chainsaw.exe` to a directory in your PATH.
 
 Verify installation:
 
 ```bash
 kube-chainsaw --version
+```
+
+---
+
+## Go Install
+
+Install from source using Go:
+
+```bash
+go install github.com/ugiordan/kube-chainsaw/cmd/kube-chainsaw@latest
 ```
 
 ---
@@ -31,8 +58,8 @@ docker pull ghcr.io/ugiordan/kube-chainsaw:latest
 Run a scan:
 
 ```bash
-docker run --rm -v $(pwd)/manifests:/manifests \
-  ghcr.io/ugiordan/kube-chainsaw:latest scan /manifests
+docker run --rm -v $(pwd)/manifests:/scan \
+  ghcr.io/ugiordan/kube-chainsaw:latest /scan
 ```
 
 ---
@@ -53,10 +80,12 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run kube-chainsaw
-        uses: ugiordan/kube-chainsaw-action@v1
+        uses: ugiordan/kube-chainsaw@v1
         with:
-          directory: manifests/
-          fail-on-severity: high
+          paths: config/ deploy/
+          fail-on: HIGH
+          format: sarif
+          output: kube-chainsaw.sarif
       
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v3
@@ -65,31 +94,15 @@ jobs:
         if: always()
 ```
 
-The action automatically generates SARIF output and uploads it to GitHub Code Scanning.
-
----
-
-## From Source
-
-Clone and install in development mode:
-
-```bash
-git clone https://github.com/ugiordan/kube-chainsaw.git
-cd kube-chainsaw
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-pip install -e .
-```
-
-See [Development Setup](../contributing/setup.md) for full development environment setup.
+The action downloads the binary, verifies checksums, and runs the scan.
 
 ---
 
 ## Requirements
 
-- Python 3.9 or later
-- No external dependencies for basic scanning
-- Optional: `rich` for enhanced console output (auto-installed with pip)
+- No dependencies (static binary)
+- Works on Linux, macOS (Intel + Apple Silicon), and Windows
+- No Python, Docker, or runtime dependencies required
 
 ---
 

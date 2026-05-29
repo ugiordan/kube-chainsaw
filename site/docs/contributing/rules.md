@@ -6,136 +6,136 @@ Learn how to add new detection rules to kube-chainsaw.
 
 ## Rule Structure
 
-Each rule is a Python class that implements the `Rule` interface:
+Detection rules are defined in `pkg/analyzer/rules.go`. Each rule has:
 
-```python
-from kube_chainsaw.rules.base import Rule
-from kube_chainsaw.models import Finding, SeverityLevel, RuleContext
+- **Rule ID**: Unique identifier (KC-001 through KC-015)
+- **Description**: Human-readable title
+- **Remediation**: How to fix the issue
+- **Detection logic**: Implemented in `pkg/analyzer/analyzer.go`
 
-class MyCustomRule(Rule):
-    rule_id = "KC-016"
-    severity = SeverityLevel.HIGH
-    name = "MyCustomRule"
-    description = "Brief description of what this rule detects"
-    
-    def check(self, context: RuleContext) -> list[Finding]:
-        findings = []
-        
-        # Analyze resources in context
-        for role in context.roles:
-            if self._is_violation(role):
-                findings.append(self._create_finding(role))
-        
-        return findings
-    
-    def _is_violation(self, role) -> bool:
-        # Detection logic
-        pass
-    
-    def _create_finding(self, role) -> Finding:
-        # Create Finding object
-        pass
+---
+
+## Rule Definition
+
+Add constants and mappings to `pkg/analyzer/rules.go`:
+
+```go
+const (
+	RuleWildcardResources     = "KC-001"
+	RuleWildcardVerbs         = "KC-002"
+	// ... existing rules ...
+	RuleNewRule               = "KC-016"  // New rule
+)
+
+// Add to ruleDescriptions
+var ruleDescriptions = map[string]string{
+	RuleWildcardResources: "Wildcard resource access",
+	// ... existing rules ...
+	RuleNewRule:           "New rule description",
+}
+
+// Add to ruleRemediations
+var ruleRemediations = map[string]string{
+	RuleWildcardResources: "Replace wildcard (*) resources with explicit resource names",
+	// ... existing rules ...
+	RuleNewRule:           "Remediation guidance",
+}
 ```
 
 ---
 
-## RuleContext
+## Detection Logic
 
-The `RuleContext` object provides access to all parsed RBAC resources:
+Implement detection logic in `pkg/analyzer/analyzer.go`. There are two main patterns:
 
-```python
-class RuleContext:
-    roles: list[Role]                    # All Roles
-    cluster_roles: list[ClusterRole]     # All ClusterRoles
-    role_bindings: list[RoleBinding]     # All RoleBindings
-    cluster_role_bindings: list[ClusterRoleBinding]
-    service_accounts: list[ServiceAccount]
-    graph: RBACGraph                     # Permission graph
+### Pattern 1: Rule-level detection
+
+Add to a `dangerousVerbs` or `dangerousResources` map:
+
+```go
+var dangerousVerbs = map[string]string{
+	"*":           RuleWildcardVerbs,
+	"escalate":    RuleEscalateVerb,
+	"impersonate": RuleImpersonateVerb,
+	"bind":        RuleBindVerb,
+	"delete":      RuleNewRule,  // New rule
+}
+```
+
+### Pattern 2: Custom detection function
+
+Add custom logic in the appropriate phase:
+
+```go
+// In checkRules() function
+for _, rule := range rules {
+	verbs := toStringSlice(rule["verbs"])
+	resources := toStringSlice(rule["resources"])
+	apiGroups := toStringSlice(rule["apiGroups"])
+
+	// New rule: detect specific pattern
+	if contains(verbs, "delete") && contains(resources, "namespaces") {
+		dedup := RuleNewRule + "|" + roleName
+		if !seen[dedup] {
+			seen[dedup] = true
+			sev := computeSeverity(scope, hasWildcards)
+			if isNamespaced {
+				sev = capSeverity(sev, models.SeverityWarning)
+			}
+			f := newFinding(RuleNewRule, sev, file, roleKind, roleName, namespace)
+			f.Description = fmt.Sprintf("Role %q can delete namespaces", roleName)
+			findings = append(findings, f)
+		}
+	}
+}
 ```
 
 ---
 
-## Example: Simple Pattern Rule
+## Example: Pod Eviction Rule
 
-Detect Roles with `create` verb on `pods/eviction`:
+Add a new rule to detect `create` verb on `pods/eviction`:
 
-```python
-from kube_chainsaw.rules.base import Rule
-from kube_chainsaw.models import Finding, SeverityLevel, RuleContext
+**Step 1:** Add constants to `pkg/analyzer/rules.go`:
 
-class PodEvictionRule(Rule):
-    rule_id = "KC-016"
-    severity = SeverityLevel.MEDIUM
-    name = "PodEviction"
-    description = "Detects create permission on pods/eviction subresource"
-    
-    def check(self, context: RuleContext) -> list[Finding]:
-        findings = []
-        
-        all_roles = context.roles + context.cluster_roles
-        
-        for role in all_roles:
-            for rule in role.rules:
-                if "pods/eviction" in rule.resources and "create" in rule.verbs:
-                    findings.append(Finding(
-                        rule_id=self.rule_id,
-                        severity=self.severity,
-                        message=f"Pod eviction permission in {role.kind} '{role.metadata.name}'",
-                        impact="Allows eviction of pods, potentially disrupting workloads",
-                        recommendation="Restrict pods/eviction to cluster administrators",
-                        location=role.location,
-                        resource=role.to_resource_ref()
-                    ))
-        
-        return findings
+```go
+const (
+	// ... existing rules ...
+	RulePodEviction = "KC-016"
+)
+
+var dangerousResources = map[string]string{
+	"*":                   RuleWildcardResources,
+	"secrets":             RuleSecretsAccess,
+	// ... existing rules ...
+	"pods/eviction":       RulePodEviction,  // New rule
+}
+
+var ruleDescriptions = map[string]string{
+	// ... existing rules ...
+	RulePodEviction: "Pod eviction permission",
+}
+
+var ruleRemediations = map[string]string{
+	// ... existing rules ...
+	RulePodEviction: "Restrict pods/eviction to cluster administrators",
+}
 ```
 
----
+**Step 2:** Add to core group resources (if applicable):
 
-## Example: Graph Traversal Rule
-
-Detect ServiceAccounts with indirect access to cluster-scoped resources:
-
-```python
-from kube_chainsaw.rules.base import Rule
-from kube_chainsaw.models import Finding, SeverityLevel, RuleContext
-
-class IndirectClusterAccessRule(Rule):
-    rule_id = "KC-017"
-    severity = SeverityLevel.HIGH
-    name = "IndirectClusterAccess"
-    description = "Detects ServiceAccounts with indirect access to cluster-scoped resources"
-    
-    def check(self, context: RuleContext) -> list[Finding]:
-        findings = []
-        
-        for sa in context.service_accounts:
-            # Use graph to find all reachable permissions
-            permissions = context.graph.get_permissions_for_service_account(sa)
-            
-            # Check if any permission grants cluster-scoped access
-            cluster_scoped = [p for p in permissions if p.scope == "cluster"]
-            
-            if cluster_scoped and sa.namespace != "kube-system":
-                # Find the path from SA to cluster-scoped resource
-                path = context.graph.find_path(sa, cluster_scoped[0])
-                
-                findings.append(Finding(
-                    rule_id=self.rule_id,
-                    severity=self.severity,
-                    message=f"ServiceAccount '{sa.metadata.name}' has indirect cluster access",
-                    impact=f"Can access cluster-scoped resources via {len(path)} hops",
-                    recommendation="Restrict bindings or use namespace-scoped roles",
-                    location=sa.location,
-                    resource=sa.to_resource_ref(),
-                    metadata={
-                        "path": [str(node) for node in path],
-                        "cluster_permissions": [str(p) for p in cluster_scoped]
-                    }
-                ))
-        
-        return findings
+```go
+var coreGroupResources = map[string]bool{
+	"secrets":           true,
+	"pods/exec":         true,
+	"pods/attach":       true,
+	"nodes":             true,
+	"persistentvolumes": true,
+	"pods/eviction":     true,  // New rule
+}
 ```
+
+That's it! The existing detection logic in `checkRules()` will automatically trigger KC-016 when it encounters the `pods/eviction` resource.
 
 ---
 
@@ -157,48 +157,40 @@ rules:
   verbs: ["create"]
 ```
 
-Write a test in `tests/test_rules.py`:
+Add a test in the appropriate test file:
 
-```python
-from kube_chainsaw.rules.kc016_pod_eviction import PodEvictionRule
-from kube_chainsaw.scanner import Scanner
+```go
+func TestPodEvictionDetection(t *testing.T) {
+	opts := loader.DefaultOptions()
+	resources, err := loader.LoadManifests([]string{"../../tests/fixtures/kc016_pod_eviction.yaml"}, opts)
+	if err != nil {
+		t.Fatalf("Failed to load manifests: %v", err)
+	}
 
-def test_pod_eviction_detection():
-    scanner = Scanner()
-    findings = scanner.scan_file("tests/fixtures/kc016_pod_eviction.yaml")
-    
-    # Filter to KC-016 findings
-    kc016_findings = [f for f in findings if f.rule_id == "KC-016"]
-    
-    assert len(kc016_findings) == 1
-    assert kc016_findings[0].resource.name == "pod-evictor"
-    assert "eviction" in kc016_findings[0].message.lower()
+	findings := analyzer.Analyze(resources)
+
+	// Filter to KC-016 findings
+	var kc016Findings []models.Finding
+	for _, f := range findings {
+		if f.RuleID == "KC-016" {
+			kc016Findings = append(kc016Findings, f)
+		}
+	}
+
+	if len(kc016Findings) != 1 {
+		t.Errorf("Expected 1 KC-016 finding, got %d", len(kc016Findings))
+	}
+
+	if kc016Findings[0].ResourceName != "pod-evictor" {
+		t.Errorf("Expected resource name 'pod-evictor', got %q", kc016Findings[0].ResourceName)
+	}
+}
 ```
 
 Run the test:
 
 ```bash
-pytest tests/test_rules.py::test_pod_eviction_detection
-```
-
----
-
-## Registering Rules
-
-Add your rule to `kube_chainsaw/rules/__init__.py`:
-
-```python
-from .kc001_wildcard_verbs import WildcardVerbsRule
-from .kc002_wildcard_resources import WildcardResourcesRule
-# ... existing rules ...
-from .kc016_pod_eviction import PodEvictionRule
-
-ALL_RULES = [
-    WildcardVerbsRule(),
-    WildcardResourcesRule(),
-    # ... existing rules ...
-    PodEvictionRule(),
-]
+go test ./pkg/analyzer -run TestPodEvictionDetection
 ```
 
 ---
@@ -206,8 +198,7 @@ ALL_RULES = [
 ## Rule ID Conventions
 
 - Core rules: `KC-001` through `KC-999`
-- Plugin rules: `PLUGIN-XXX-001`
-- Custom rules: `CUSTOM-001` or organization prefix (e.g., `ACME-001`)
+- Sequential numbering (next available: KC-016)
 
 ---
 
@@ -217,8 +208,10 @@ ALL_RULES = [
 |----------|----------|
 | CRITICAL | Direct path to cluster-admin or privilege escalation chains |
 | HIGH | Dangerous permissions or misconfigurations (wildcard verbs, secret access) |
-| MEDIUM | Overly broad permissions or policy violations |
-| LOW | Best practice violations or inefficiencies |
+| WARNING | Overly broad permissions or policy violations |
+| INFO | Best practice violations or informational findings |
+
+Severity is computed dynamically based on binding scope (see `computeSeverity` in `analyzer.go`).
 
 ---
 
@@ -229,20 +222,20 @@ Add a rule description to `site/docs/reference/rules.md`:
 ```markdown
 ## KC-016: Pod Eviction Permission
 
-**Severity:** MEDIUM
+**Severity:** Varies by binding scope
 
-**Description:** Detects `create` verb on `pods/eviction` subresource.
+**Description:** Detects `create` verb on `pods/eviction` subresource. Pod eviction allows terminating pods, potentially disrupting workloads.
 
-**Impact:** Allows eviction of pods, potentially disrupting workloads.
+**Impact:** Allows eviction of pods, which can be used to disrupt services or trigger workload rescheduling.
 
 **Example:**
 
-...yaml
+​```yaml
 rules:
 - apiGroups: [""]
   resources: ["pods/eviction"]
   verbs: ["create"]
-...
+​```
 
 **Recommendation:** Restrict `pods/eviction` to cluster administrators.
 ```
@@ -253,13 +246,12 @@ rules:
 
 Before submitting a PR:
 
-- [ ] Rule class implements `Rule` interface
-- [ ] Rule ID follows conventions (KC-XXX)
-- [ ] Severity is appropriate
+- [ ] Rule constants added to `rules.go`
+- [ ] Detection logic added to `analyzer.go` (or leverages existing pattern)
 - [ ] Test fixture and test case added
-- [ ] All tests pass (`pytest`)
-- [ ] Code formatted (`black .`)
-- [ ] Linting passes (`ruff check .`)
+- [ ] All tests pass (`go test ./...`)
+- [ ] Code formatted (`go fmt ./...`)
+- [ ] Linting passes (`go vet ./...`)
 - [ ] Documentation added to `rules.md`
 
 ---

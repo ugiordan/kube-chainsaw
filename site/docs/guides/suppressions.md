@@ -6,23 +6,18 @@ Suppressions allow you to mark specific findings as accepted risks or false posi
 
 ## Suppression File Format
 
-Create `.kube-chainsaw-suppressions.yaml` in your project root:
+Create `suppressions.yaml` in your project root:
 
 ```yaml
+suppressions:
 - rule_id: KC-001
   resource_name: admin-cluster-role
-  justification: "Required for cluster operator"
-  expiry: "2027-06-01"
+  reason: "Required for cluster operator"
 
 - rule_id: KC-004
   resource_name: default
-  namespace: kube-system
-  justification: "kube-system default SA needs elevated permissions"
-  expiry: null  # No expiry
-
-- rule_id: KC-007
-  file_pattern: "test/**/*.yaml"
-  justification: "Test manifests intentionally demonstrate escalation"
+  resource_namespace: kube-system
+  reason: "kube-system default SA needs elevated permissions"
 ```
 
 ---
@@ -32,11 +27,9 @@ Create `.kube-chainsaw-suppressions.yaml` in your project root:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `rule_id` | Yes | Rule to suppress (e.g., KC-001) |
-| `resource_name` | No | Resource name to match (exact match) |
-| `namespace` | No | Namespace to match |
-| `file_pattern` | No | Glob pattern for file paths |
-| `justification` | Yes | Why this finding is suppressed |
-| `expiry` | No | ISO 8601 date when suppression expires (null = no expiry) |
+| `resource_name` | Yes | Resource name to match (exact match) |
+| `resource_namespace` | No | Namespace to match (omit for cluster-scoped or wildcard) |
+| `reason` | No | Why this finding is suppressed (for documentation) |
 
 ---
 
@@ -44,51 +37,49 @@ Create `.kube-chainsaw-suppressions.yaml` in your project root:
 
 A suppression matches a finding if **all** specified fields match:
 
-- `rule_id` must match
-- If `resource_name` is specified, it must match exactly
-- If `namespace` is specified, it must match
-- If `file_pattern` is specified, the file path must match the glob
+- `rule_id` must match exactly
+- `resource_name` must match exactly
+- If `resource_namespace` is specified, it must match exactly; if omitted, acts as a wildcard (matches any namespace or cluster-scoped resources)
 
-**Example 1:** Suppress KC-001 for a specific role:
+**Example 1:** Suppress KC-001 for a specific ClusterRole:
 
 ```yaml
+suppressions:
 - rule_id: KC-001
   resource_name: admin-role
-  justification: "Admin role requires wildcard verbs"
+  reason: "Admin role requires wildcard verbs"
 ```
 
-**Example 2:** Suppress all KC-004 findings in kube-system:
+**Example 2:** Suppress KC-004 for default ServiceAccount in kube-system:
 
 ```yaml
+suppressions:
 - rule_id: KC-004
-  namespace: kube-system
-  justification: "System namespace uses default ServiceAccounts"
+  resource_name: default
+  resource_namespace: kube-system
+  reason: "System namespace uses default ServiceAccounts"
 ```
 
-**Example 3:** Suppress all findings in test files:
+**Example 3:** Suppress KC-014 for all RoleBindings named "viewer-binding" in any namespace:
 
 ```yaml
-- rule_id: "*"
-  file_pattern: "test/**/*.yaml"
-  justification: "Test fixtures"
+suppressions:
+- rule_id: KC-014
+  resource_name: viewer-binding
+  reason: "Standard pattern across all namespaces"
 ```
 
 ---
 
-## Expiry Dates
+## Suppression Validation
 
-Suppressions can expire after a specified date:
+kube-chainsaw validates suppressions at load time:
 
-```yaml
-- rule_id: KC-003
-  resource_name: temp-admin-binding
-  justification: "Temporary access for incident response"
-  expiry: "2027-01-15"
-```
+- `rule_id` must be non-empty
+- `resource_name` must be non-empty
+- If `rule_id` doesn't match the known pattern (KC-001 through KC-015), a warning is printed to stderr
 
-After `2027-01-15`, this suppression will no longer apply and the finding will reappear in scans.
-
-Set `expiry: null` or omit the field for permanent suppressions.
+Unrecognized `rule_id` values (e.g., typos or custom rules) generate warnings but don't fail the scan.
 
 ---
 
@@ -97,59 +88,41 @@ Set `expiry: null` or omit the field for permanent suppressions.
 Commit the suppression file to version control:
 
 ```bash
-git add .kube-chainsaw-suppressions.yaml
+git add suppressions.yaml
 git commit -m "Suppress known RBAC findings"
 ```
 
 Reference it in CI:
 
 ```bash
-kube-chainsaw scan k8s/ --suppressions .kube-chainsaw-suppressions.yaml
-```
-
-Or use the default file name (`.kube-chainsaw-suppressions.yaml` in the scan directory):
-
-```bash
-kube-chainsaw scan k8s/
+kube-chainsaw k8s/ --suppressions suppressions.yaml
 ```
 
 ---
 
-## Multiple Suppression Files
+## Suppressed Findings in Output
 
-You can specify multiple suppression files:
-
-```bash
-kube-chainsaw scan k8s/ --suppressions global.yaml,team-specific.yaml
-```
-
-Comma-separated file paths. Suppressions from all files are merged.
-
----
-
-## Suppression Report
-
-kube-chainsaw logs suppressed findings in verbose mode:
-
-```bash
-kube-chainsaw scan k8s/ --verbose
-```
-
-**Output:**
+Suppressed findings are included in the output but marked with `[SUPPRESSED]`:
 
 ```
-[INFO] Suppressed KC-001 for 'admin-role' (justification: Admin role requires wildcard verbs)
-[INFO] Suppressed KC-004 for 'default' in kube-system (justification: System namespace)
+=== HIGH ===
+
+  [KC-001] Wildcard resource access [SUPPRESSED]
+    File:        k8s/admin-role.yaml
+    Resource:    ClusterRole/admin-role
+    ...
 ```
+
+Suppressed findings do not count toward the exit code threshold.
 
 ---
 
 ## Best Practices
 
-1. **Always provide justification**: Future maintainers need to understand why findings are suppressed
-2. **Use expiry dates for temporary access**: Prevent suppressions from becoming permanent by default
-3. **Scope suppressions narrowly**: Match specific resources instead of wildcard patterns when possible
-4. **Review suppressions regularly**: Audit the suppression file during security reviews
+1. **Always provide reason**: Future maintainers need to understand why findings are suppressed
+2. **Scope suppressions narrowly**: Match specific resources with explicit namespace when possible
+3. **Review suppressions regularly**: Audit the suppression file during security reviews
+4. **Commit suppressions to version control**: Track changes and provide accountability
 
 ---
 
@@ -158,33 +131,34 @@ kube-chainsaw scan k8s/ --verbose
 ### Suppress admin role findings:
 
 ```yaml
+suppressions:
 - rule_id: KC-001
   resource_name: cluster-admin-role
-  justification: "Required for Kubernetes cluster operator"
-  expiry: null
+  reason: "Required for Kubernetes cluster operator"
 
-- rule_id: KC-003
-  resource_name: cluster-admin-binding
-  justification: "Required for Kubernetes cluster operator"
-  expiry: null
+- rule_id: KC-010
+  resource_name: cluster-admin-role
+  reason: "Required for Kubernetes cluster operator"
 ```
 
-### Suppress findings in dev environment:
+### Suppress cluster-admin pod in specific namespace:
 
 ```yaml
-- rule_id: "*"
-  file_pattern: "k8s/dev/**/*.yaml"
-  justification: "Dev environment has relaxed RBAC for debugging"
-  expiry: "2027-12-31"
+suppressions:
+- rule_id: KC-013
+  resource_name: operator-deployment
+  resource_namespace: operators
+  reason: "Operator requires cluster-admin for CRD management"
 ```
 
-### Suppress specific escalation chain:
+### Suppress RoleBinding to ClusterRole pattern:
 
 ```yaml
-- rule_id: KC-007
-  resource_name: ci-pipeline-sa
-  justification: "CI ServiceAccount needs pod exec for integration tests"
-  expiry: "2027-06-01"
+suppressions:
+- rule_id: KC-014
+  resource_name: read-pods-binding
+  resource_namespace: monitoring
+  reason: "Standard read-only pattern for monitoring"
 ```
 
 ---
