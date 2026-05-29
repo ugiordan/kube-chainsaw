@@ -8,6 +8,13 @@ Set Theme "Catppuccin Mocha"
 Set Padding 20
 Set TypingSpeed 40ms
 
+# Build the binary first (hidden from recording)
+Hide
+Type "cd /Users/ugogiordano/workdir/rhoai/kube-chainsaw && go build -o /tmp/kube-chainsaw ./cmd/kube-chainsaw/ && export PATH=/tmp:$PATH"
+Enter
+Sleep 3s
+Show
+
 Type "# Scan Kubernetes RBAC manifests for privilege escalation"
 Enter
 Sleep 1s
