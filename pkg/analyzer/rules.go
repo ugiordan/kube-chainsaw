@@ -51,13 +51,7 @@ var escalationBindingResources = map[string]bool{
 
 // escalationPodResources triggers KC-012 when combined with create.
 var escalationPodResources = map[string]bool{
-	"pods":        true,
-	"deployments": true,
-	"daemonsets":  true,
-	"statefulsets": true,
-	"replicasets": true,
-	"jobs":        true,
-	"cronjobs":    true,
+	"pods": true,
 }
 
 // escalationMutationVerbs are verbs that count as creating/modifying.

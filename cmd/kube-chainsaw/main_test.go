@@ -47,10 +47,10 @@ func TestCLI_CleanExitCode(t *testing.T) {
 
 func TestCLI_FailOnWarning(t *testing.T) {
 	bin := testBinary(t)
-	cmd := exec.Command(bin, "--fail-on", "WARNING", "../../testdata/clean/")
+	cmd := exec.Command(bin, "--fail-on", "WARNING", "../../testdata/dangerous/")
 	_, err := cmd.CombinedOutput()
 
-	// clean/ has WARNING findings, so --fail-on WARNING should exit 1
+	// dangerous/ has WARNING+ findings, so --fail-on WARNING should exit 1
 	require.Error(t, err, "expected non-zero exit code with --fail-on WARNING")
 	exitErr, ok := err.(*exec.ExitError)
 	require.True(t, ok)

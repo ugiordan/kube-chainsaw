@@ -212,20 +212,6 @@ func analyzePrivilegeChains(resources *models.LoadedResources) []models.Finding 
 		}
 	}
 
-	// Also check RoleBindings referencing ClusterRoles even without pods
-	for _, rb := range resources.RoleBindings {
-		roleRefKind := getRoleRefKind(rb.RoleRef)
-		if roleRefKind == "ClusterRole" {
-			roleRefName := getRoleRefName(rb.RoleRef)
-			f := newFinding(RuleRoleBindingClusterRef, models.SeverityWarning, rb.File, "RoleBinding", rb.Name, rb.Namespace)
-			f.Description = fmt.Sprintf(
-				"RoleBinding %q in namespace %q references ClusterRole %q",
-				rb.Name, rb.Namespace, roleRefName,
-			)
-			findings = appendIfNew(findings, f)
-		}
-	}
-
 	return findings
 }
 
