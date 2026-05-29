@@ -39,6 +39,10 @@ theme:
 
 plugins:
   - search
+  - glightbox:
+      touchNavigation: true
+      loop: false
+      zoomable: true
 
 markdown_extensions:
   - admonition

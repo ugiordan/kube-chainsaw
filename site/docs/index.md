@@ -7,6 +7,12 @@ Graph-level RBAC analysis for Kubernetes manifests
 
 ---
 
+## Demo
+
+![kube-chainsaw demo](images/demo.gif)
+
+---
+
 ## How It Works
 
 kube-chainsaw analyzes Kubernetes RBAC manifests by building a directed graph of permissions and traversing privilege escalation paths.
