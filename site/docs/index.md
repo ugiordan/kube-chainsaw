@@ -13,31 +13,118 @@ kube-chainsaw analyzes Kubernetes RBAC manifests by building a directed graph of
 
 ```mermaid
 graph LR
-    A[YAML Files] --> B[Loader]
-    B --> C[Analyzer]
-    C --> D[Reporters]
-    D --> E[SARIF + Console]
+    subgraph Input
+        A[YAML Manifests]
+    end
+
+    subgraph "kube-chainsaw"
+        B[Loader] --> C[Graph Builder]
+        C --> D[15 Detection Rules]
+        D --> E[Severity Engine]
+    end
+
+    subgraph Output
+        F[Console]
+        G[JSON]
+        H[SARIF 2.1.0]
+    end
+
+    A --> B
+    E --> F
+    E --> G
+    E --> H
 ```
 
-**Pipeline stages:**
+**Pipeline:**
 
-1. **Loader** (pkg/loader): Parses YAML manifests from directories and files
-2. **Analyzer** (pkg/analyzer): Runs 15 detection rules to identify privilege escalation chains and misconfigurations
-3. **Reporters** (pkg/reporter): Outputs findings in SARIF, JSON, or human-readable console format
+1. **Loader** parses YAML manifests (ClusterRoles, Roles, Bindings, ServiceAccounts, Pods, Deployments, Jobs)
+2. **Graph Builder** maps SA -> Binding -> Role -> verb/resource permission chains
+3. **15 Detection Rules** (KC-001 through KC-015) identify dangerous patterns, wildcards, escalation paths
+4. **Severity Engine** adjusts severity based on binding scope (cluster-wide vs namespace-scoped vs unbound)
+
+---
+
+## Quick Example
+
+Given a Kubernetes operator with overly permissive RBAC:
+
+```yaml
+# roles.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: my-operator-role
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterrolebindings"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: my-operator-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: my-operator-role
+subjects:
+  - kind: ServiceAccount
+    name: my-operator-sa
+    namespace: default
+```
+
+Run kube-chainsaw:
+
+```bash
+$ kube-chainsaw config/
+```
+
+```
+=== HIGH ===
+
+  [KC-006] Secrets access
+    File:        config/roles.yaml
+    Resource:    ClusterRole/my-operator-role
+    Description: Role "my-operator-role" grants access to dangerous resource "secrets"
+    Remediation: Restrict secrets access to specific namespaces and only the verbs needed
+
+  [KC-010] RBAC modification capability
+    File:        config/roles.yaml
+    Resource:    ClusterRole/my-operator-role
+    Description: Role "my-operator-role" grants access to dangerous resource "clusterrolebindings"
+    Remediation: Limit RBAC modification to dedicated admin roles with proper audit
+
+  [KC-011] Privilege escalation via role/binding modification
+    File:        config/roles.yaml
+    Resource:    ClusterRole/my-operator-role
+    Description: Role "my-operator-role" can create/modify roles or bindings (privilege escalation risk)
+    Remediation: Restrict ability to create/modify roles and bindings to admin users only
+
+Total: 3 findings [3 HIGH]
+```
+
+Generate SARIF for GitHub Code Scanning:
+
+```bash
+kube-chainsaw config/ --format sarif --output results.sarif
+```
 
 ---
 
 ## Comparison
 
-| Tool | Static Analysis | Graph Traversal | Privilege Chains |
-|------|----------------|-----------------|------------------|
-| **kube-chainsaw** | ✅ | ✅ | ✅ |
-| kube-linter | ✅ | ❌ | ❌ |
-| KubiScan | ❌ | ✅ (runtime only) | ✅ |
-| rbac-tool | ✅ | ❌ | ❌ |
-| kubectl-who-can | ❌ | ✅ (runtime only) | ❌ |
+| Tool | Static Analysis | Graph Traversal | Privilege Chains | Workload Analysis |
+|------|:-:|:-:|:-:|:-:|
+| **kube-chainsaw** | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
+| kube-linter | :white_check_mark: | :x: | :x: | :x: |
+| KubiScan | :x: | :white_check_mark: | :white_check_mark: | :x: |
+| rbac-tool | :x: | :white_check_mark: | :x: | :x: |
+| kubectl-who-can | :x: | :white_check_mark: | :x: | :x: |
 
-kube-chainsaw is the only tool that performs **static graph traversal** to detect privilege escalation chains before deployment.
+kube-chainsaw is the only tool that performs **static graph traversal** on YAML manifests to detect privilege escalation chains before deployment. No live cluster required.
 
 ---
 
@@ -49,19 +136,19 @@ kube-chainsaw is the only tool that performs **static graph traversal** to detec
 
     ---
 
-    Builds a directed graph of RBAC permissions to detect multi-hop privilege escalation paths that static linters miss.
+    Builds SA -> Binding -> Role -> verb/resource permission graphs. Detects multi-hop privilege escalation paths that flat rule-based linters miss.
 
 -   :material-shield-check:{ .lg .middle } **Static Analysis**
 
     ---
 
-    Analyzes manifests before deployment. No runtime access required. Works in CI pipelines, pre-commit hooks, and local development.
+    Analyzes manifests before deployment. No runtime access required. Works in CI pipelines and local development.
 
 -   :material-file-document:{ .lg .middle } **SARIF Output**
 
     ---
 
-    Native SARIF support for GitHub Code Scanning, GitLab SAST, and other security platforms. Includes fingerprints for deduplication.
+    Native SARIF 2.1.0 for GitHub Code Scanning, GitLab SAST, and other security platforms. Includes fingerprints for deduplication.
 
 -   :material-robot:{ .lg .middle } **CI-First Design**
 
@@ -73,54 +160,20 @@ kube-chainsaw is the only tool that performs **static graph traversal** to detec
 
 ---
 
-## Quick Example
-
-Scan a directory of Kubernetes manifests:
-
-```bash
-kube-chainsaw manifests/
-```
-
-**Output:**
-
-```
-=== CRITICAL ===
-
-  [KC-013] Pod running with cluster-admin privileges
-    File:        manifests/deployment.yaml
-    Resource:    default/Deployment/operator
-    Description: Deployment "operator" uses ServiceAccount "admin-sa" which is bound to cluster-admin
-    Remediation: Never use cluster-admin for pod service accounts; create a scoped role
-
-=== HIGH ===
-
-  [KC-002] Wildcard verb access
-    File:        manifests/roles.yaml
-    Resource:    ClusterRole/admin-role
-    Description: Role "admin-role" has dangerous verb "*"
-    Remediation: Replace wildcard (*) verbs with specific verbs needed
-
-Total: 2 findings [1 CRITICAL, 1 HIGH]
-```
-
-Generate SARIF for GitHub Code Scanning:
-
-```bash
-kube-chainsaw manifests/ --format sarif --output results.sarif
-```
-
----
-
 ## What Gets Detected
 
-kube-chainsaw identifies 15 categories of RBAC misconfigurations and privilege escalation vectors:
+15 detection rules covering:
 
-- **Dangerous permissions**: wildcard verbs, cluster-admin bindings, secret access
-- **Privilege chains**: multi-hop paths from low-privilege ServiceAccounts to admin resources
-- **Misconfigurations**: overly broad bindings, unused ServiceAccounts, duplicate rules
-- **Supply chain risks**: default ServiceAccounts with elevated permissions
+| Category | Rules | Examples |
+|----------|-------|---------|
+| **Wildcard permissions** | KC-001, KC-002 | `resources: ["*"]`, `verbs: ["*"]` |
+| **Dangerous verbs** | KC-003, KC-004, KC-005 | escalate, impersonate, bind |
+| **Sensitive resources** | KC-006 to KC-010 | secrets, pods/exec, nodes, PVs, clusterrolebindings |
+| **Escalation combos** | KC-011, KC-012 | create/patch on roles/bindings, workload creation |
+| **Privilege chains** | KC-013, KC-014 | cluster-admin pods, RoleBinding->ClusterRole |
+| **Aggregation** | KC-015 | aggregated ClusterRoles |
 
-See [Detection Rules](reference/rules.md) for the full list.
+See [Detection Rules](reference/rules.md) for the full reference with YAML examples.
 
 ---
 
