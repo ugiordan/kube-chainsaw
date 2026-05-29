@@ -1,9 +1,6 @@
-__pycache__/
-*.pyc
-*.egg-info/
 dist/
-build/
-.ruff_cache/
-.pytest_cache/
-*.sarif
-.eggs/
+kube-chainsaw
+*.test
+coverage.out
+.venv/
+__pycache__/
