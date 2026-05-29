@@ -176,6 +176,9 @@ func TestCLI_NoArgs(t *testing.T) {
 	cmd := exec.Command(bin)
 	_, err := cmd.CombinedOutput()
 	require.Error(t, err, "should fail without args")
+	exitErr, ok := err.(*exec.ExitError)
+	require.True(t, ok)
+	assert.Equal(t, 2, exitErr.ExitCode(), "argument errors should exit with code 2")
 }
 
 func TestCLI_InvalidPath(t *testing.T) {
@@ -183,4 +186,7 @@ func TestCLI_InvalidPath(t *testing.T) {
 	cmd := exec.Command(bin, "/nonexistent/path")
 	_, err := cmd.CombinedOutput()
 	require.Error(t, err, "should fail with invalid path")
+	exitErr, ok := err.(*exec.ExitError)
+	require.True(t, ok)
+	assert.Equal(t, 2, exitErr.ExitCode(), "runtime errors should exit with code 2")
 }

@@ -79,6 +79,12 @@ func TestRuleDetection(t *testing.T) {
 			minSev:  models.SeverityHigh,
 		},
 		{
+			name:    "KC-005: Bind verb",
+			fixture: "bind-verb.yaml",
+			ruleID:  "KC-005",
+			minSev:  models.SeverityHigh,
+		},
+		{
 			name:    "KC-006: Secrets access (cluster-wide)",
 			fixture: "secrets-cluster-wide.yaml",
 			ruleID:  "KC-006",
@@ -94,6 +100,18 @@ func TestRuleDetection(t *testing.T) {
 			name:    "KC-007: Pod exec/attach",
 			fixture: "pods-exec.yaml",
 			ruleID:  "KC-007",
+			minSev:  models.SeverityHigh,
+		},
+		{
+			name:    "KC-008: Nodes access",
+			fixture: "nodes-access.yaml",
+			ruleID:  "KC-008",
+			minSev:  models.SeverityHigh,
+		},
+		{
+			name:    "KC-009: PersistentVolume access",
+			fixture: "pv-access.yaml",
+			ruleID:  "KC-009",
 			minSev:  models.SeverityHigh,
 		},
 		{

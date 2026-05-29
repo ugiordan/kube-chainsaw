@@ -60,13 +60,13 @@ type Finding struct {
 	ResourceName      string
 	ResourceNamespace string // empty for cluster-scoped resources
 	Suppressed        bool
-	Fingerprint       string // SHA256 of "rule_id|resource_kind|resource_name|namespace"
+	Fingerprint       string // SHA256 of "rule_id|resource_kind|resource_name|namespace|file"
 }
 
 // ComputeFingerprint fills the Fingerprint field with a SHA256 hash
-// derived from the finding's identifying fields.
+// derived from the finding's identifying fields, including the file path.
 func (f *Finding) ComputeFingerprint() {
-	data := fmt.Sprintf("%s|%s|%s|%s", f.RuleID, f.ResourceKind, f.ResourceName, f.ResourceNamespace)
+	data := fmt.Sprintf("%s|%s|%s|%s|%s", f.RuleID, f.ResourceKind, f.ResourceName, f.ResourceNamespace, f.File)
 	hash := sha256.Sum256([]byte(data))
 	f.Fingerprint = fmt.Sprintf("%x", hash)
 }
@@ -125,14 +125,25 @@ type PodData struct {
 	Doc                map[string]interface{}
 }
 
+// WorkloadData holds a parsed workload controller (Deployment, DaemonSet, etc.).
+type WorkloadData struct {
+	Name               string
+	Kind               string
+	Namespace          string
+	ServiceAccountName string
+	File               string
+	Doc                map[string]interface{}
+}
+
 // LoadedResources is the aggregate of all parsed RBAC-relevant resources.
 type LoadedResources struct {
 	ClusterRoles        map[string]*ClusterRoleData
-	Roles               map[string]*RoleData     // key: "namespace/name"
+	Roles               map[string]*RoleData         // key: "namespace/name"
 	ClusterRoleBindings []*BindingData
 	RoleBindings        []*BindingData
-	ServiceAccounts     map[string]*SAData  // key: "namespace/name"
-	Pods                map[string]*PodData // key: "namespace/name"
+	ServiceAccounts     map[string]*SAData           // key: "namespace/name"
+	Pods                map[string]*PodData          // key: "namespace/name"
+	Workloads           map[string]*WorkloadData     // key: "namespace/name"
 }
 
 // NewLoadedResources creates an initialized LoadedResources with empty maps/slices.
@@ -144,10 +155,12 @@ func NewLoadedResources() *LoadedResources {
 		RoleBindings:        nil,
 		ServiceAccounts:     make(map[string]*SAData),
 		Pods:                make(map[string]*PodData),
+		Workloads:           make(map[string]*WorkloadData),
 	}
 }
 
-// IsEmpty returns true if no resources were loaded.
+// IsEmpty returns true if no RBAC resources were loaded.
+// Workloads and Pods are not considered RBAC resources for this check.
 func (r *LoadedResources) IsEmpty() bool {
 	return len(r.ClusterRoles) == 0 &&
 		len(r.Roles) == 0 &&

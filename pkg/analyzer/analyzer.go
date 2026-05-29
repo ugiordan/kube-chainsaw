@@ -49,10 +49,26 @@ func checkRules(rules []map[string]interface{}, roleName, roleKind, namespace, f
 	for _, rule := range rules {
 		verbs := toStringSlice(rule["verbs"])
 		resources := toStringSlice(rule["resources"])
+		apiGroups := toStringSlice(rule["apiGroups"])
 
 		hasWildcardVerb := contains(verbs, "*")
 		hasWildcardResource := contains(resources, "*")
 		hasWildcards := hasWildcardVerb || hasWildcardResource
+
+		// Finding 3: detect wildcard apiGroups as a standalone pattern
+		if hasWildcardAPIGroup(apiGroups) {
+			dedup := RuleWildcardResources + "|apiGroup|" + roleName
+			if !seen[dedup] {
+				seen[dedup] = true
+				sev := computeSeverity(scope, true)
+				if isNamespaced {
+					sev = capSeverity(sev, models.SeverityWarning)
+				}
+				f := newFinding(RuleWildcardResources, sev, file, roleKind, roleName, namespace)
+				f.Description = fmt.Sprintf("Role %q uses wildcard apiGroups, granting access to all API groups including CRDs", roleName)
+				findings = append(findings, f)
+			}
+		}
 
 		// Check dangerous verbs
 		for _, verb := range verbs {
@@ -71,9 +87,13 @@ func checkRules(rules []map[string]interface{}, roleName, roleKind, namespace, f
 			}
 		}
 
-		// Check dangerous resources
+		// Check dangerous resources (Finding 3: with apiGroup filtering)
 		for _, res := range resources {
 			if ruleID, ok := dangerousResources[res]; ok {
+				// Skip if apiGroups don't match the resource type
+				if !apiGroupMatchesResource(apiGroups, res) {
+					continue
+				}
 				dedup := ruleID + "|" + roleName
 				if !seen[dedup] {
 					seen[dedup] = true
@@ -89,7 +109,7 @@ func checkRules(rules []map[string]interface{}, roleName, roleKind, namespace, f
 		}
 
 		// Check escalation combos: KC-011 (create/patch/update on roles/bindings)
-		if hasEscalationBindingCombo(verbs, resources) {
+		if hasEscalationBindingCombo(verbs, resources, apiGroups) {
 			dedup := RuleEscalationBindings + "|" + roleName
 			if !seen[dedup] {
 				seen[dedup] = true
@@ -104,7 +124,7 @@ func checkRules(rules []map[string]interface{}, roleName, roleKind, namespace, f
 		}
 
 		// Check escalation combo: KC-012 (create on pods/workloads)
-		if hasEscalationPodCombo(verbs, resources) {
+		if hasEscalationPodCombo(verbs, resources, apiGroups) {
 			dedup := RuleEscalationPodCreation + "|" + roleName
 			if !seen[dedup] {
 				seen[dedup] = true
@@ -123,8 +143,9 @@ func checkRules(rules []map[string]interface{}, roleName, roleKind, namespace, f
 }
 
 // hasEscalationBindingCombo returns true if verbs include create/patch/update AND
-// resources include roles, clusterroles, rolebindings, or clusterrolebindings.
-func hasEscalationBindingCombo(verbs, resources []string) bool {
+// resources include roles, clusterroles, rolebindings, or clusterrolebindings,
+// AND apiGroups include rbac.authorization.k8s.io or *.
+func hasEscalationBindingCombo(verbs, resources, apiGroups []string) bool {
 	hasMutationVerb := false
 	for _, v := range verbs {
 		if escalationMutationVerbs[v] || v == "*" {
@@ -136,17 +157,28 @@ func hasEscalationBindingCombo(verbs, resources []string) bool {
 		return false
 	}
 
+	hasMatchingResource := false
 	for _, r := range resources {
-		if escalationBindingResources[r] || r == "*" {
-			return true
+		if r == "*" {
+			hasMatchingResource = true
+			break
+		}
+		if escalationBindingResources[r] {
+			hasMatchingResource = true
+			break
 		}
 	}
-	return false
+	if !hasMatchingResource {
+		return false
+	}
+
+	// Check apiGroups: must include rbac.authorization.k8s.io or *
+	return apiGroupMatchesEscalationBinding(apiGroups)
 }
 
 // hasEscalationPodCombo returns true if verbs include "create" (or "*") AND
-// resources include pods or workload controllers.
-func hasEscalationPodCombo(verbs, resources []string) bool {
+// resources include pods or workload controllers, with appropriate apiGroups.
+func hasEscalationPodCombo(verbs, resources, apiGroups []string) bool {
 	hasCreate := false
 	for _, v := range verbs {
 		if v == "create" || v == "*" {
@@ -159,23 +191,57 @@ func hasEscalationPodCombo(verbs, resources []string) bool {
 	}
 
 	for _, r := range resources {
-		if escalationPodResources[r] || r == "*" {
+		if r == "*" {
+			return true
+		}
+		if escalationWorkloadResources[r] && apiGroupMatchesEscalationWorkload(apiGroups, r) {
 			return true
 		}
 	}
 	return false
 }
 
-// analyzePrivilegeChains walks Pod -> SA -> Binding -> Role chains.
+// analyzePrivilegeChains walks Pod/Workload -> SA -> Binding -> Role chains.
 func analyzePrivilegeChains(resources *models.LoadedResources) []models.Finding {
 	var findings []models.Finding
 
-	for _, pod := range resources.Pods {
-		saKey := pod.Namespace + "/" + pod.ServiceAccountName
+	// Collect all SA references from Pods and Workloads
+	type saRef struct {
+		kind      string // "Pod" or workload kind
+		name      string
+		namespace string
+		saKey     string
+		saName    string
+		file      string
+	}
 
+	var saRefs []saRef
+	for _, pod := range resources.Pods {
+		saRefs = append(saRefs, saRef{
+			kind:      "Pod",
+			name:      pod.Name,
+			namespace: pod.Namespace,
+			saKey:     pod.Namespace + "/" + pod.ServiceAccountName,
+			saName:    pod.ServiceAccountName,
+			file:      pod.File,
+		})
+	}
+	// Finding 5: also include workloads
+	for _, wl := range resources.Workloads {
+		saRefs = append(saRefs, saRef{
+			kind:      wl.Kind,
+			name:      wl.Name,
+			namespace: wl.Namespace,
+			saKey:     wl.Namespace + "/" + wl.ServiceAccountName,
+			saName:    wl.ServiceAccountName,
+			file:      wl.File,
+		})
+	}
+
+	for _, ref := range saRefs {
 		// Check ClusterRoleBindings referencing this SA
 		for _, crb := range resources.ClusterRoleBindings {
-			if !bindingReferencesSubject(crb, pod.ServiceAccountName, pod.Namespace) {
+			if !bindingReferencesSubject(crb, ref.saName, ref.namespace) {
 				continue
 			}
 
@@ -183,19 +249,19 @@ func analyzePrivilegeChains(resources *models.LoadedResources) []models.Finding 
 			roleRefKind := getRoleRefKind(crb.RoleRef)
 
 			if roleRefKind == "ClusterRole" && roleRefName == "cluster-admin" {
-				// KC-013: Pod running with cluster-admin
-				f := newFinding(RuleClusterAdminPod, models.SeverityCritical, pod.File, "Pod", pod.Name, pod.Namespace)
+				// KC-013: Pod/Workload running with cluster-admin
+				f := newFinding(RuleClusterAdminPod, models.SeverityCritical, ref.file, ref.kind, ref.name, ref.namespace)
 				f.Description = fmt.Sprintf(
-					"Pod %q uses ServiceAccount %q which is bound to cluster-admin via ClusterRoleBinding %q",
-					pod.Name, saKey, crb.Name,
+					"%s %q uses ServiceAccount %q which is bound to cluster-admin via ClusterRoleBinding %q",
+					ref.kind, ref.name, ref.saKey, crb.Name,
 				)
 				findings = appendIfNew(findings, f)
 			}
 		}
 
-		// Check RoleBindings referencing a ClusterRole (KC-014)
+		// Check RoleBindings referencing a ClusterRole (KC-014, pod-enriched)
 		for _, rb := range resources.RoleBindings {
-			if !bindingReferencesSubject(rb, pod.ServiceAccountName, pod.Namespace) {
+			if !bindingReferencesSubject(rb, ref.saName, ref.namespace) {
 				continue
 			}
 
@@ -204,11 +270,26 @@ func analyzePrivilegeChains(resources *models.LoadedResources) []models.Finding 
 				roleRefName := getRoleRefName(rb.RoleRef)
 				f := newFinding(RuleRoleBindingClusterRef, models.SeverityWarning, rb.File, "RoleBinding", rb.Name, rb.Namespace)
 				f.Description = fmt.Sprintf(
-					"RoleBinding %q in namespace %q references ClusterRole %q (used by pod %q via SA %q)",
-					rb.Name, rb.Namespace, roleRefName, pod.Name, saKey,
+					"RoleBinding %q in namespace %q references ClusterRole %q (used by %s %q via SA %q)",
+					rb.Name, rb.Namespace, roleRefName, ref.kind, ref.name, ref.saKey,
 				)
 				findings = appendIfNew(findings, f)
 			}
+		}
+	}
+
+	// Finding 1: KC-014 must also fire at the RoleBinding level, independent of Pod/Workload existence.
+	// This catches cases where RoleBindings reference ClusterRoles but the Pods are in different repos/files.
+	for _, rb := range resources.RoleBindings {
+		roleRefKind := getRoleRefKind(rb.RoleRef)
+		if roleRefKind == "ClusterRole" {
+			roleRefName := getRoleRefName(rb.RoleRef)
+			f := newFinding(RuleRoleBindingClusterRef, models.SeverityWarning, rb.File, "RoleBinding", rb.Name, rb.Namespace)
+			f.Description = fmt.Sprintf(
+				"RoleBinding %q in namespace %q references ClusterRole %q",
+				rb.Name, rb.Namespace, roleRefName,
+			)
+			findings = appendIfNew(findings, f)
 		}
 	}
 

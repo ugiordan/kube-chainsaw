@@ -133,3 +133,46 @@ func TestApplySuppressions_EmptyInputs(t *testing.T) {
 	result = ApplySuppressions(findings, nil)
 	assert.False(t, result[0].Suppressed)
 }
+
+func TestLoadSuppressions_EmptyRuleID(t *testing.T) {
+	content := `suppressions:
+  - rule_id: ""
+    resource_name: admin
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+
+	_, err := LoadSuppressions(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty rule_id")
+}
+
+func TestLoadSuppressions_EmptyResourceName(t *testing.T) {
+	content := `suppressions:
+  - rule_id: KC-001
+    resource_name: ""
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0644))
+
+	_, err := LoadSuppressions(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty resource_name")
+}
+
+func TestLoadSuppressions_FileTooLarge(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.yaml")
+	// Create a file that exceeds the 1MB limit
+	data := make([]byte, MaxSuppressionFileSize+1)
+	for i := range data {
+		data[i] = 'a'
+	}
+	require.NoError(t, os.WriteFile(path, data, 0644))
+
+	_, err := LoadSuppressions(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds maximum size")
+}

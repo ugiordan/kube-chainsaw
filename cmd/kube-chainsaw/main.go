@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,9 +28,20 @@ var (
 	quiet             bool
 )
 
+// Finding 9: sentinel error for threshold exceeded (instead of os.Exit inside RunE)
+var errThresholdExceeded = errors.New("findings exceed severity threshold")
+
+// Finding 11: sentinel error for runtime errors (exit code 2)
+var errRuntime = errors.New("runtime error")
+
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+		if errors.Is(err, errThresholdExceeded) {
+			os.Exit(1)
+		}
+		// Finding 11: runtime/argument errors get exit code 2
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(2)
 	}
 }
 
@@ -83,6 +95,11 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading manifests: %w", err)
 	}
 
+	// Finding 15: warn when no RBAC resources are found
+	if resources.IsEmpty() {
+		fmt.Fprintln(os.Stderr, "WARNING: no RBAC resources found in the scanned paths. Verify the paths contain Kubernetes RBAC manifests.")
+	}
+
 	// Step 2: Analyze
 	findings := analyzer.Analyze(resources)
 
@@ -125,9 +142,10 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 6: Exit code based on severity threshold
+	// Finding 9: return sentinel error instead of os.Exit
 	for _, f := range findings {
 		if !f.Suppressed && f.Severity >= failSeverity {
-			os.Exit(1)
+			return errThresholdExceeded
 		}
 	}
 

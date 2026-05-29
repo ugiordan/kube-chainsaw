@@ -8,6 +8,11 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const (
+	// MaxSuppressionFileSize is the maximum size of a suppressions file (1MB).
+	MaxSuppressionFileSize = 1 * 1024 * 1024
+)
+
 // Suppression defines a single suppression entry.
 type Suppression struct {
 	RuleID            string `yaml:"rule_id" json:"rule_id"`
@@ -22,7 +27,17 @@ type SuppressionFile struct {
 }
 
 // LoadSuppressions reads and parses a suppressions YAML file.
+// Finding 13: enforces file size limit and validates entries.
 func LoadSuppressions(path string) ([]Suppression, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read suppressions file %q: %w", path, err)
+	}
+
+	if info.Size() > MaxSuppressionFileSize {
+		return nil, fmt.Errorf("suppressions file %q exceeds maximum size (%d > %d bytes)", path, info.Size(), MaxSuppressionFileSize)
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read suppressions file %q: %w", path, err)
@@ -31,6 +46,16 @@ func LoadSuppressions(path string) ([]Suppression, error) {
 	var sf SuppressionFile
 	if err := yaml.Unmarshal(data, &sf); err != nil {
 		return nil, fmt.Errorf("failed to parse suppressions file %q: %w", path, err)
+	}
+
+	// Validate entries: rule_id and resource_name must be non-empty
+	for i, s := range sf.Suppressions {
+		if s.RuleID == "" {
+			return nil, fmt.Errorf("suppression entry %d in %q has empty rule_id", i, path)
+		}
+		if s.ResourceName == "" {
+			return nil, fmt.Errorf("suppression entry %d (rule_id=%q) in %q has empty resource_name", i, s.RuleID, path)
+		}
 	}
 
 	return sf.Suppressions, nil

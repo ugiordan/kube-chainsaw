@@ -41,6 +41,25 @@ var dangerousResources = map[string]string{
 	"clusterrolebindings": RuleRBACModification,
 }
 
+// coreGroupResources are resources that should only trigger when apiGroups
+// contains "" (core group) or "*".
+var coreGroupResources = map[string]bool{
+	"secrets":           true,
+	"pods/exec":         true,
+	"pods/attach":       true,
+	"nodes":             true,
+	"persistentvolumes": true,
+}
+
+// rbacGroupResources are resources that should only trigger when apiGroups
+// contains "rbac.authorization.k8s.io" or "*".
+var rbacGroupResources = map[string]bool{
+	"clusterroles":        true,
+	"clusterrolebindings": true,
+	"roles":               true,
+	"rolebindings":        true,
+}
+
 // escalationBindingResources triggers KC-011 when combined with create/patch/update.
 var escalationBindingResources = map[string]bool{
 	"roles":               true,
@@ -49,9 +68,16 @@ var escalationBindingResources = map[string]bool{
 	"clusterrolebindings": true,
 }
 
-// escalationPodResources triggers KC-012 when combined with create.
-var escalationPodResources = map[string]bool{
-	"pods": true,
+// escalationWorkloadResources triggers KC-012 when combined with create.
+// Finding 10: expanded to include workload controllers.
+var escalationWorkloadResources = map[string]bool{
+	"pods":         true,
+	"deployments":  true,
+	"daemonsets":   true,
+	"statefulsets": true,
+	"jobs":         true,
+	"cronjobs":     true,
+	"replicasets":  true,
 }
 
 // escalationMutationVerbs are verbs that count as creating/modifying.
@@ -74,7 +100,7 @@ var ruleDescriptions = map[string]string{
 	RulePVAccess:              "PersistentVolume access",
 	RuleRBACModification:      "RBAC modification capability",
 	RuleEscalationBindings:    "Privilege escalation via role/binding modification",
-	RuleEscalationPodCreation: "Privilege escalation via pod creation",
+	RuleEscalationPodCreation: "Privilege escalation via workload creation",
 	RuleClusterAdminPod:       "Pod running with cluster-admin privileges",
 	RuleRoleBindingClusterRef: "RoleBinding referencing ClusterRole",
 	RuleAggregatedClusterRole: "Aggregated ClusterRole detected",
@@ -93,7 +119,7 @@ var ruleRemediations = map[string]string{
 	RulePVAccess:              "Limit PV access to read-only verbs unless storage management is required",
 	RuleRBACModification:      "Limit RBAC modification to dedicated admin roles with proper audit",
 	RuleEscalationBindings:    "Restrict ability to create/modify roles and bindings to admin users only",
-	RuleEscalationPodCreation: "Restrict pod creation to CI/CD pipelines and use PodSecurityPolicies",
+	RuleEscalationPodCreation: "Restrict workload creation to CI/CD pipelines and use PodSecurity admission",
 	RuleClusterAdminPod:       "Never use cluster-admin for pod service accounts; create a scoped role",
 	RuleRoleBindingClusterRef: "Use a Role instead of ClusterRole when granting namespace-scoped access",
 	RuleAggregatedClusterRole: "Review aggregation labels to ensure only intended roles are included",
@@ -121,4 +147,74 @@ func computeSeverity(scope *models.BindingScope, hasWildcards bool) models.Sever
 
 	// Fallback: unbound
 	return models.SeverityInfo
+}
+
+// apiGroupMatchesResource returns true if the apiGroups in the rule are
+// appropriate for the given resource. This prevents false positives from
+// CRDs that happen to share names with core/RBAC resources.
+func apiGroupMatchesResource(apiGroups []string, resource string) bool {
+	// Wildcard resources match any group
+	if resource == "*" {
+		return true
+	}
+
+	for _, group := range apiGroups {
+		if group == "*" {
+			return true
+		}
+		if coreGroupResources[resource] && group == "" {
+			return true
+		}
+		if rbacGroupResources[resource] && group == "rbac.authorization.k8s.io" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// apiGroupMatchesEscalationBinding checks if apiGroups are appropriate for
+// RBAC escalation binding resources.
+func apiGroupMatchesEscalationBinding(apiGroups []string) bool {
+	for _, group := range apiGroups {
+		if group == "*" || group == "rbac.authorization.k8s.io" {
+			return true
+		}
+	}
+	return false
+}
+
+// apiGroupMatchesEscalationWorkload checks if apiGroups are appropriate for
+// workload creation escalation resources.
+func apiGroupMatchesEscalationWorkload(apiGroups []string, resource string) bool {
+	if resource == "*" {
+		return true
+	}
+	for _, group := range apiGroups {
+		if group == "*" {
+			return true
+		}
+		// pods are in the core group
+		if resource == "pods" && group == "" {
+			return true
+		}
+		// workload controllers are in apps/batch groups
+		if (resource == "deployments" || resource == "daemonsets" || resource == "statefulsets" || resource == "replicasets") && (group == "apps") {
+			return true
+		}
+		if (resource == "jobs" || resource == "cronjobs") && (group == "batch") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasWildcardAPIGroup returns true if apiGroups contains "*".
+func hasWildcardAPIGroup(apiGroups []string) bool {
+	for _, g := range apiGroups {
+		if g == "*" {
+			return true
+		}
+	}
+	return false
 }

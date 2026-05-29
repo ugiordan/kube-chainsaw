@@ -67,6 +67,7 @@ func TestFindingFingerprint(t *testing.T) {
 		ResourceKind:      "ClusterRole",
 		ResourceName:      "test-role",
 		ResourceNamespace: "default",
+		File:              "test.yaml",
 	}
 	f.ComputeFingerprint()
 
@@ -79,6 +80,7 @@ func TestFindingFingerprint(t *testing.T) {
 		ResourceKind:      "ClusterRole",
 		ResourceName:      "test-role",
 		ResourceNamespace: "default",
+		File:              "test.yaml",
 	}
 	f2.ComputeFingerprint()
 	assert.Equal(t, f.Fingerprint, f2.Fingerprint)
@@ -89,9 +91,21 @@ func TestFindingFingerprint(t *testing.T) {
 		ResourceKind:      "ClusterRole",
 		ResourceName:      "test-role",
 		ResourceNamespace: "default",
+		File:              "test.yaml",
 	}
 	f3.ComputeFingerprint()
 	assert.NotEqual(t, f.Fingerprint, f3.Fingerprint)
+
+	// Different file path produces different fingerprint
+	f4 := Finding{
+		RuleID:            "KC-001",
+		ResourceKind:      "ClusterRole",
+		ResourceName:      "test-role",
+		ResourceNamespace: "default",
+		File:              "other.yaml",
+	}
+	f4.ComputeFingerprint()
+	assert.NotEqual(t, f.Fingerprint, f4.Fingerprint)
 }
 
 func TestFindingFingerprintClusterScoped(t *testing.T) {
@@ -100,6 +114,7 @@ func TestFindingFingerprintClusterScoped(t *testing.T) {
 		ResourceKind:      "ClusterRole",
 		ResourceName:      "test-role",
 		ResourceNamespace: "", // cluster-scoped
+		File:              "test.yaml",
 	}
 	f.ComputeFingerprint()
 	assert.NotEmpty(t, f.Fingerprint)
@@ -127,6 +142,7 @@ func TestNewLoadedResourcesInitialized(t *testing.T) {
 	assert.NotNil(t, r.Roles)
 	assert.NotNil(t, r.ServiceAccounts)
 	assert.NotNil(t, r.Pods)
+	assert.NotNil(t, r.Workloads)
 	assert.Empty(t, r.ClusterRoleBindings)
 	assert.Empty(t, r.RoleBindings)
 }

@@ -28,6 +28,19 @@ var DefaultExcludeDirs = map[string]bool{
 // goTemplateRe matches Go template expressions like {{ .Values.foo }}.
 var goTemplateRe = regexp.MustCompile(`\{\{[^}]+\}\}`)
 
+// yamlDocSepRe matches YAML document separators at the start of a line.
+var yamlDocSepRe = regexp.MustCompile(`(?m)^---\s*$`)
+
+// workloadKinds lists Kubernetes workload controller kinds we parse.
+var workloadKinds = map[string]bool{
+	"Deployment":  true,
+	"DaemonSet":   true,
+	"StatefulSet": true,
+	"Job":         true,
+	"CronJob":     true,
+	"ReplicaSet":  true,
+}
+
 // Options configures the manifest loader.
 type Options struct {
 	ExcludeDirs        []string
@@ -125,8 +138,10 @@ func walkDir(root string, excludes map[string]bool, opts *Options, result *model
 			return nil
 		}
 
-		// processFile errors are non-fatal: skip malformed files
-		_ = processFile(path, opts, result)
+		// Finding 6: log file processing errors to stderr instead of silently discarding
+		if err := processFile(path, opts, result); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: skipping %s: %v\n", path, err)
+		}
 		return nil
 	})
 }
@@ -137,9 +152,15 @@ func isYAMLFile(path string) bool {
 }
 
 func processFile(path string, opts *Options, result *models.LoadedResources) error {
-	info, err := os.Stat(path)
+	// Finding 7: use os.Lstat to avoid following symlinks
+	info, err := os.Lstat(path)
 	if err != nil {
 		return err
+	}
+
+	// Skip symlinks (TOCTOU mitigation)
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return fmt.Errorf("symlink detected, skipping")
 	}
 
 	if info.Size() > opts.MaxFileSize {
@@ -156,6 +177,7 @@ func processFile(path string, opts *Options, result *models.LoadedResources) err
 	// Preprocess Go templates so the YAML parser doesn't choke
 	content = goTemplateRe.ReplaceAllString(content, "placeholder-value")
 
+	// Design observation: use package-level compiled regex
 	docs := splitYAMLDocs(content)
 
 	if len(docs) > opts.MaxDocsPerFile {
@@ -188,9 +210,7 @@ func processFile(path string, opts *Options, result *models.LoadedResources) err
 // multiline strings, which the simple approach can't fully handle, but
 // works well enough for Kubernetes manifests).
 func splitYAMLDocs(content string) []string {
-	// Split on document separator at the start of a line
-	re := regexp.MustCompile(`(?m)^---\s*$`)
-	return re.Split(content, -1)
+	return yamlDocSepRe.Split(content, -1)
 }
 
 func categorize(doc map[string]interface{}, file string, result *models.LoadedResources) {
@@ -205,6 +225,10 @@ func categorize(doc map[string]interface{}, file string, result *models.LoadedRe
 	switch kind {
 	case "ClusterRole":
 		rules := extractRules(doc)
+		// Finding 8: warn on duplicate map keys
+		if _, exists := result.ClusterRoles[name]; exists {
+			fmt.Fprintf(os.Stderr, "warning: duplicate ClusterRole %q found in %s, previous entry will be overwritten\n", name, file)
+		}
 		result.ClusterRoles[name] = &models.ClusterRoleData{
 			Rules: rules,
 			File:  file,
@@ -214,6 +238,10 @@ func categorize(doc map[string]interface{}, file string, result *models.LoadedRe
 	case "Role":
 		rules := extractRules(doc)
 		key := namespace + "/" + name
+		// Finding 8: warn on duplicate map keys
+		if _, exists := result.Roles[key]; exists {
+			fmt.Fprintf(os.Stderr, "warning: duplicate Role %q found in %s, previous entry will be overwritten\n", key, file)
+		}
 		result.Roles[key] = &models.RoleData{
 			Rules:     rules,
 			Namespace: namespace,
@@ -231,6 +259,9 @@ func categorize(doc map[string]interface{}, file string, result *models.LoadedRe
 
 	case "ServiceAccount":
 		key := namespace + "/" + name
+		if _, exists := result.ServiceAccounts[key]; exists {
+			fmt.Fprintf(os.Stderr, "warning: duplicate ServiceAccount %q found in %s, previous entry will be overwritten\n", key, file)
+		}
 		result.ServiceAccounts[key] = &models.SAData{
 			Name:      name,
 			Namespace: namespace,
@@ -241,12 +272,33 @@ func categorize(doc map[string]interface{}, file string, result *models.LoadedRe
 	case "Pod":
 		saName := extractServiceAccountName(doc)
 		key := namespace + "/" + name
+		if _, exists := result.Pods[key]; exists {
+			fmt.Fprintf(os.Stderr, "warning: duplicate Pod %q found in %s, previous entry will be overwritten\n", key, file)
+		}
 		result.Pods[key] = &models.PodData{
 			Name:               name,
 			Namespace:          namespace,
 			ServiceAccountName: saName,
 			File:               file,
 			Doc:                doc,
+		}
+
+	default:
+		// Finding 5: parse workload controllers
+		if workloadKinds[kind] {
+			saName := extractWorkloadServiceAccountName(doc, kind)
+			key := namespace + "/" + name
+			if _, exists := result.Workloads[key]; exists {
+				fmt.Fprintf(os.Stderr, "warning: duplicate %s %q found in %s, previous entry will be overwritten\n", kind, key, file)
+			}
+			result.Workloads[key] = &models.WorkloadData{
+				Name:               name,
+				Kind:               kind,
+				Namespace:          namespace,
+				ServiceAccountName: saName,
+				File:               file,
+				Doc:                doc,
+			}
 		}
 	}
 }
@@ -302,6 +354,44 @@ func extractServiceAccountName(doc map[string]interface{}) string {
 	}
 
 	saName, ok := spec["serviceAccountName"].(string)
+	if !ok || saName == "" {
+		return "default"
+	}
+	return saName
+}
+
+// extractWorkloadServiceAccountName extracts the serviceAccountName from workload controllers.
+// For CronJob, the SA is nested under spec.jobTemplate.spec.template.spec.
+// For Job, it's under spec.template.spec.
+// For Deployment/DaemonSet/StatefulSet/ReplicaSet, it's under spec.template.spec.
+func extractWorkloadServiceAccountName(doc map[string]interface{}, kind string) string {
+	spec, ok := doc["spec"].(map[string]interface{})
+	if !ok {
+		return "default"
+	}
+
+	if kind == "CronJob" {
+		jobTemplate, ok := spec["jobTemplate"].(map[string]interface{})
+		if !ok {
+			return "default"
+		}
+		spec, ok = jobTemplate["spec"].(map[string]interface{})
+		if !ok {
+			return "default"
+		}
+	}
+
+	template, ok := spec["template"].(map[string]interface{})
+	if !ok {
+		return "default"
+	}
+
+	podSpec, ok := template["spec"].(map[string]interface{})
+	if !ok {
+		return "default"
+	}
+
+	saName, ok := podSpec["serviceAccountName"].(string)
 	if !ok || saName == "" {
 		return "default"
 	}

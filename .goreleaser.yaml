@@ -3,6 +3,8 @@ version: 2
 builds:
   - main: ./cmd/kube-chainsaw
     binary: kube-chainsaw
+    env:
+      - CGO_ENABLED=0
     ldflags:
       - -s -w
       - -X github.com/ugiordan/kube-chainsaw/internal/version.Version={{.Version}}

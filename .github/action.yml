@@ -31,13 +31,46 @@ runs:
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_SUPPRESSIONS: ${{ inputs.suppressions }}
       run: |
-        # Download binary
+        set -euo pipefail
+
+        # Finding 14: validate inputs before use
+        case "${INPUT_FORMAT}" in
+          console|json|sarif) ;;
+          *) echo "::error::Invalid format: ${INPUT_FORMAT}. Must be console, json, or sarif." && exit 1 ;;
+        esac
+
+        case "${INPUT_FAIL_ON}" in
+          CRITICAL|HIGH|WARNING|INFO) ;;
+          *) echo "::error::Invalid fail-on: ${INPUT_FAIL_ON}. Must be CRITICAL, HIGH, WARNING, or INFO." && exit 1 ;;
+        esac
+
+        TMPDIR="$(mktemp -d)"
+        trap 'rm -rf "${TMPDIR}"' EXIT
+
+        # Download binary and checksums
         if [ "${INPUT_VERSION}" = "latest" ]; then
-          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/ugiordan/kube-chainsaw/releases/latest | grep "browser_download_url.*linux_amd64" | head -1 | cut -d '"' -f 4)
+          RELEASE_INFO=$(curl -s https://api.github.com/repos/ugiordan/kube-chainsaw/releases/latest)
+          DOWNLOAD_URL=$(echo "${RELEASE_INFO}" | grep "browser_download_url.*linux_amd64\.tar\.gz\"" | head -1 | cut -d '"' -f 4)
+          CHECKSUM_URL=$(echo "${RELEASE_INFO}" | grep "browser_download_url.*checksums\.txt\"" | head -1 | cut -d '"' -f 4)
         else
           DOWNLOAD_URL="https://github.com/ugiordan/kube-chainsaw/releases/download/${INPUT_VERSION}/kube-chainsaw_${INPUT_VERSION#v}_linux_amd64.tar.gz"
+          CHECKSUM_URL="https://github.com/ugiordan/kube-chainsaw/releases/download/${INPUT_VERSION}/checksums.txt"
         fi
-        curl -sL "${DOWNLOAD_URL}" | tar xz -C /usr/local/bin kube-chainsaw
+
+        # Finding 4: download to temp file and verify checksum before extracting
+        ARCHIVE="${TMPDIR}/kube-chainsaw.tar.gz"
+        curl -sL "${DOWNLOAD_URL}" -o "${ARCHIVE}"
+        curl -sL "${CHECKSUM_URL}" -o "${TMPDIR}/checksums.txt"
+
+        EXPECTED_HASH=$(grep "linux_amd64.tar.gz" "${TMPDIR}/checksums.txt" | awk '{print $1}')
+        ACTUAL_HASH=$(sha256sum "${ARCHIVE}" | awk '{print $1}')
+
+        if [ "${EXPECTED_HASH}" != "${ACTUAL_HASH}" ]; then
+          echo "::error::Checksum verification failed. Expected: ${EXPECTED_HASH}, Got: ${ACTUAL_HASH}"
+          exit 1
+        fi
+
+        tar xzf "${ARCHIVE}" -C /usr/local/bin kube-chainsaw
         chmod +x /usr/local/bin/kube-chainsaw
 
         read -ra PATH_ARGS <<< "${INPUT_PATHS}"
