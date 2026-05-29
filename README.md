@@ -6,8 +6,29 @@ Builds ServiceAccount -> RoleBinding -> Role -> verb/resource permission graphs 
 
 ## Install
 
+### Binary (recommended)
+Download from [Releases](https://github.com/ugiordan/kube-chainsaw/releases):
 ```bash
-pip install kube-chainsaw
+curl -sL https://github.com/ugiordan/kube-chainsaw/releases/latest/download/kube-chainsaw_linux_amd64.tar.gz | tar xz
+sudo mv kube-chainsaw /usr/local/bin/
+```
+
+### Go install
+```bash
+go install github.com/ugiordan/kube-chainsaw/cmd/kube-chainsaw@latest
+```
+
+### Docker
+```bash
+docker run --rm -v $(pwd):/scan ghcr.io/ugiordan/kube-chainsaw:latest /scan/config
+```
+
+### GitHub Action
+```yaml
+- uses: ugiordan/kube-chainsaw@v1
+  with:
+    paths: config/ deploy/
+    fail-on: HIGH
 ```
 
 ## Quick Start

@@ -1,0 +1,51 @@
+name: kube-chainsaw
+description: Graph-level RBAC privilege chain analysis for Kubernetes manifests
+inputs:
+  paths:
+    description: Space-separated directories to scan
+    required: true
+  fail-on:
+    description: Minimum severity to fail (CRITICAL/HIGH/WARNING/INFO)
+    default: CRITICAL
+  format:
+    description: Output format (console/json/sarif)
+    default: console
+  output:
+    description: Output file path
+    required: false
+  version:
+    description: kube-chainsaw version to install
+    default: latest
+  suppressions:
+    description: Path to suppressions YAML file
+    required: false
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_SUPPRESSIONS: ${{ inputs.suppressions }}
+      run: |
+        # Download binary
+        if [ "${INPUT_VERSION}" = "latest" ]; then
+          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/ugiordan/kube-chainsaw/releases/latest | grep "browser_download_url.*linux_amd64" | head -1 | cut -d '"' -f 4)
+        else
+          DOWNLOAD_URL="https://github.com/ugiordan/kube-chainsaw/releases/download/${INPUT_VERSION}/kube-chainsaw_${INPUT_VERSION#v}_linux_amd64.tar.gz"
+        fi
+        curl -sL "${DOWNLOAD_URL}" | tar xz -C /usr/local/bin kube-chainsaw
+        chmod +x /usr/local/bin/kube-chainsaw
+
+        read -ra PATH_ARGS <<< "${INPUT_PATHS}"
+        ARGS=()
+        ARGS+=(--fail-on "${INPUT_FAIL_ON}")
+        ARGS+=(--format "${INPUT_FORMAT}")
+        [ -n "${INPUT_OUTPUT}" ] && ARGS+=(--output "${INPUT_OUTPUT}")
+        [ -n "${INPUT_SUPPRESSIONS}" ] && ARGS+=(--suppressions "${INPUT_SUPPRESSIONS}")
+        ARGS+=(--)
+        ARGS+=("${PATH_ARGS[@]}")
+        kube-chainsaw "${ARGS[@]}"
