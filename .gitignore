@@ -1,5 +1,5 @@
 dist/
-kube-chainsaw
+/kube-chainsaw
 *.test
 coverage.out
 .venv/
