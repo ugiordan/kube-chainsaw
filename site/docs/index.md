@@ -63,7 +63,7 @@ kube-chainsaw is the only tool that performs **static graph traversal** to detec
 
     Native SARIF support for GitHub Code Scanning, GitLab SAST, and other security platforms. Includes fingerprints for deduplication.
 
--   :material-github-actions:{ .lg .middle } **CI-First Design**
+-   :material-robot:{ .lg .middle } **CI-First Design**
 
     ---
 
