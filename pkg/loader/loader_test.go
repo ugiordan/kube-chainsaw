@@ -240,3 +240,128 @@ spec:
 		assert.Equal(t, "default", pod.ServiceAccountName, "pods without explicit SA should default to 'default'")
 	}
 }
+
+// R2-1: Test workload parsing
+func TestWorkloadParsing(t *testing.T) {
+	dir := filepath.Join(testdataDir(), "dangerous")
+	result, err := LoadManifests([]string{dir}, nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// Should have workloads loaded
+	assert.NotEmpty(t, result.Workloads, "expected Workloads to be loaded")
+
+	// Check Deployment with secrets SA extraction
+	deployment, hasDeployment := result.Workloads["Deployment/production/secrets-reader-deployment"]
+	if assert.True(t, hasDeployment, "expected secrets-reader-deployment") {
+		assert.Equal(t, "secrets-reader-sa", deployment.ServiceAccountName)
+		assert.Equal(t, "Deployment", deployment.Kind)
+		assert.Equal(t, "production", deployment.Namespace)
+		assert.Equal(t, "secrets-reader-deployment", deployment.Name)
+	}
+
+	// Check CronJob with cluster-admin SA extraction (nested path)
+	cronjob, hasCronJob := result.Workloads["CronJob/batch-jobs/admin-cronjob"]
+	if assert.True(t, hasCronJob, "expected admin-cronjob") {
+		assert.Equal(t, "cronjob-admin-sa", cronjob.ServiceAccountName)
+		assert.Equal(t, "CronJob", cronjob.Kind)
+		assert.Equal(t, "batch-jobs", cronjob.Namespace)
+		assert.Equal(t, "admin-cronjob", cronjob.Name)
+	}
+}
+
+// R2-1: Test workload SA extraction with default fallback
+func TestWorkloadServiceAccountDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "deployment.yaml"), []byte(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: no-sa-deployment
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      containers:
+      - name: app
+        image: busybox
+`), 0o644))
+
+	result, err := LoadManifests([]string{tmpDir}, nil)
+	require.NoError(t, err)
+
+	workload, has := result.Workloads["Deployment/default/no-sa-deployment"]
+	if assert.True(t, has) {
+		assert.Equal(t, "default", workload.ServiceAccountName, "workloads without explicit SA should default to 'default'")
+	}
+}
+
+// R2-1: Test workload map key includes Kind to prevent collisions
+func TestWorkloadMapKeyIncludesKind(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "workloads.yaml"), []byte(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      serviceAccountName: deployment-sa
+      containers:
+      - name: nginx
+        image: nginx
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: nginx
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: nginx-daemon
+  template:
+    metadata:
+      labels:
+        app: nginx-daemon
+    spec:
+      serviceAccountName: daemonset-sa
+      containers:
+      - name: nginx
+        image: nginx
+`), 0o644))
+
+	result, err := LoadManifests([]string{tmpDir}, nil)
+	require.NoError(t, err)
+
+	// Both should exist without collision
+	deployment, hasDeployment := result.Workloads["Deployment/default/nginx"]
+	daemonset, hasDaemonSet := result.Workloads["DaemonSet/default/nginx"]
+
+	assert.True(t, hasDeployment, "expected Deployment/default/nginx")
+	assert.True(t, hasDaemonSet, "expected DaemonSet/default/nginx")
+
+	if hasDeployment && hasDaemonSet {
+		assert.Equal(t, "deployment-sa", deployment.ServiceAccountName)
+		assert.Equal(t, "daemonset-sa", daemonset.ServiceAccountName)
+		assert.NotEqual(t, deployment.ServiceAccountName, daemonset.ServiceAccountName, "different workload kinds should not overwrite each other")
+	}
+}

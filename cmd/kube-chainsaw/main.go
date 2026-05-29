@@ -31,9 +31,6 @@ var (
 // Finding 9: sentinel error for threshold exceeded (instead of os.Exit inside RunE)
 var errThresholdExceeded = errors.New("findings exceed severity threshold")
 
-// Finding 11: sentinel error for runtime errors (exit code 2)
-var errRuntime = errors.New("runtime error")
-
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		if errors.Is(err, errThresholdExceeded) {

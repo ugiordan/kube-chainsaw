@@ -152,13 +152,20 @@ func isYAMLFile(path string) bool {
 }
 
 func processFile(path string, opts *Options, result *models.LoadedResources) error {
-	// Finding 7: use os.Lstat to avoid following symlinks
-	info, err := os.Lstat(path)
+	// NEW-6: use os.Open + Fstat to eliminate TOCTOU window
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Fstat on the open file descriptor (no TOCTOU)
+	info, err := f.Stat()
 	if err != nil {
 		return err
 	}
 
-	// Skip symlinks (TOCTOU mitigation)
+	// Skip symlinks
 	if info.Mode()&fs.ModeSymlink != 0 {
 		return fmt.Errorf("symlink detected, skipping")
 	}
@@ -167,7 +174,9 @@ func processFile(path string, opts *Options, result *models.LoadedResources) err
 		return fmt.Errorf("file %q exceeds max size (%d > %d)", path, info.Size(), opts.MaxFileSize)
 	}
 
-	data, err := os.ReadFile(path)
+	// Read from the already-opened file descriptor
+	data := make([]byte, info.Size())
+	_, err = f.Read(data)
 	if err != nil {
 		return err
 	}
@@ -287,7 +296,8 @@ func categorize(doc map[string]interface{}, file string, result *models.LoadedRe
 		// Finding 5: parse workload controllers
 		if workloadKinds[kind] {
 			saName := extractWorkloadServiceAccountName(doc, kind)
-			key := namespace + "/" + name
+			// NEW-2: include Kind in key to prevent cross-kind collisions
+			key := kind + "/" + namespace + "/" + name
 			if _, exists := result.Workloads[key]; exists {
 				fmt.Fprintf(os.Stderr, "warning: duplicate %s %q found in %s, previous entry will be overwritten\n", kind, key, file)
 			}

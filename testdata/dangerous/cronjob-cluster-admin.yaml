@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cronjob-admin-sa
+  namespace: batch-jobs
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cronjob-admin-binding
+subjects:
+- kind: ServiceAccount
+  name: cronjob-admin-sa
+  namespace: batch-jobs
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: admin-cronjob
+  namespace: batch-jobs
+spec:
+  schedule: "0 2 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: cronjob-admin-sa
+          containers:
+          - name: backup
+            image: busybox
+            command: ["sh", "-c", "echo 'backup task'"]
+          restartPolicy: OnFailure

@@ -44,6 +44,22 @@ runs:
           *) echo "::error::Invalid fail-on: ${INPUT_FAIL_ON}. Must be CRITICAL, HIGH, WARNING, or INFO." && exit 1 ;;
         esac
 
+        # NEW-4: validate output and suppressions file inputs
+        if [ -n "${INPUT_OUTPUT}" ]; then
+          # Check that output directory exists
+          OUTPUT_DIR=$(dirname "${INPUT_OUTPUT}")
+          if [ ! -d "${OUTPUT_DIR}" ]; then
+            echo "::error::Output directory does not exist: ${OUTPUT_DIR}" && exit 1
+          fi
+        fi
+
+        if [ -n "${INPUT_SUPPRESSIONS}" ]; then
+          # Check that suppressions file exists
+          if [ ! -f "${INPUT_SUPPRESSIONS}" ]; then
+            echo "::error::Suppressions file does not exist: ${INPUT_SUPPRESSIONS}" && exit 1
+          fi
+        fi
+
         TMPDIR="$(mktemp -d)"
         trap 'rm -rf "${TMPDIR}"' EXIT
 
@@ -58,11 +74,18 @@ runs:
         fi
 
         # Finding 4: download to temp file and verify checksum before extracting
+        # NEW-1: Both archive and checksums come from the same GitHub release.
+        # This provides integrity verification but not authenticity protection against
+        # a compromised release. Users should pin to specific versions via the version input.
         ARCHIVE="${TMPDIR}/kube-chainsaw.tar.gz"
-        curl -sL "${DOWNLOAD_URL}" -o "${ARCHIVE}"
-        curl -sL "${CHECKSUM_URL}" -o "${TMPDIR}/checksums.txt"
+        curl -sfL "${DOWNLOAD_URL}" -o "${ARCHIVE}" || { echo "::error::Failed to download kube-chainsaw archive"; exit 1; }
+        curl -sfL "${CHECKSUM_URL}" -o "${TMPDIR}/checksums.txt" || { echo "::error::Failed to download checksums file"; exit 1; }
 
         EXPECTED_HASH=$(grep "linux_amd64.tar.gz" "${TMPDIR}/checksums.txt" | awk '{print $1}')
+        if [ -z "${EXPECTED_HASH}" ]; then
+          echo "::error::Could not find checksum for linux_amd64.tar.gz in checksums.txt"
+          exit 1
+        fi
         ACTUAL_HASH=$(sha256sum "${ARCHIVE}" | awk '{print $1}')
 
         if [ "${EXPECTED_HASH}" != "${ACTUAL_HASH}" ]; then

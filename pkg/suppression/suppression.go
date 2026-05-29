@@ -56,9 +56,27 @@ func LoadSuppressions(path string) ([]Suppression, error) {
 		if s.ResourceName == "" {
 			return nil, fmt.Errorf("suppression entry %d (rule_id=%q) in %q has empty resource_name", i, s.RuleID, path)
 		}
+		// NEW-3: validate rule_id matches known pattern
+		if !isValidRuleID(s.RuleID) {
+			fmt.Fprintf(os.Stderr, "warning: suppression entry %d in %q has unrecognized rule_id %q (expected KC-001 through KC-015)\n", i, path, s.RuleID)
+		}
 	}
 
 	return sf.Suppressions, nil
+}
+
+// isValidRuleID checks if a rule_id follows the expected pattern (KC-001 through KC-015)
+func isValidRuleID(ruleID string) bool {
+	// Known rule IDs: KC-001 through KC-015
+	if len(ruleID) != 6 || ruleID[:3] != "KC-" {
+		return false
+	}
+	// Extract numeric part
+	numPart := ruleID[3:]
+	if numPart < "001" || numPart > "015" {
+		return false
+	}
+	return true
 }
 
 // ApplySuppressions marks findings as suppressed when they match a suppression

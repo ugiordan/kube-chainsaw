@@ -423,3 +423,55 @@ func TestBindVerb(t *testing.T) {
 	findings := Analyze(resources)
 	assert.True(t, hasRule(findings, "KC-005"), "expected KC-005 (bind verb)")
 }
+
+// R2-1: Test KC-013 fires for Deployment -> SA -> cluster-admin chain
+func TestWorkloadClusterAdminChainDeployment(t *testing.T) {
+	resources := loadFixture(t, "dangerous", "deployment-with-secrets.yaml")
+	findings := Analyze(resources)
+
+	// Should fire KC-006 for secrets access via the ClusterRole
+	assert.True(t, hasRule(findings, "KC-006"),
+		"expected KC-006 (secrets access) finding")
+}
+
+// R2-1: Test KC-013 fires for CronJob -> SA -> cluster-admin chain
+func TestWorkloadClusterAdminChainCronJob(t *testing.T) {
+	resources := loadFixture(t, "dangerous", "cronjob-cluster-admin.yaml")
+	findings := Analyze(resources)
+
+	// Should fire KC-013 for CronJob with cluster-admin
+	assert.True(t, hasRule(findings, "KC-013"),
+		"expected KC-013 (cluster-admin workload) finding")
+
+	matched := findingsWithRule(findings, "KC-013")
+	require.NotEmpty(t, matched)
+	for _, f := range matched {
+		assert.Equal(t, models.SeverityCritical, f.Severity)
+		assert.Equal(t, "CronJob", f.ResourceKind)
+		assert.Equal(t, "admin-cronjob", f.ResourceName)
+		assert.Equal(t, "batch-jobs", f.ResourceNamespace)
+	}
+}
+
+// R2-1: Test workload-based chain detection across multiple workload types
+func TestWorkloadPrivilegeChains(t *testing.T) {
+	dir := filepath.Join(testdataDir(), "dangerous")
+	resources, err := loader.LoadManifests([]string{dir}, nil)
+	require.NoError(t, err)
+
+	findings := Analyze(resources)
+
+	// Should detect privilege chains for both Pods and Workloads
+	clusterAdminFindings := findingsWithRule(findings, "KC-013")
+	assert.NotEmpty(t, clusterAdminFindings, "expected at least one KC-013 finding from workloads or pods")
+
+	// Verify at least one finding is from a workload (not a Pod)
+	hasWorkloadFinding := false
+	for _, f := range clusterAdminFindings {
+		if f.ResourceKind != "Pod" {
+			hasWorkloadFinding = true
+			break
+		}
+	}
+	assert.True(t, hasWorkloadFinding, "expected at least one KC-013 finding from a workload controller")
+}

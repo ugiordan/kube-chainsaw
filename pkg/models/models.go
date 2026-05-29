@@ -143,7 +143,7 @@ type LoadedResources struct {
 	RoleBindings        []*BindingData
 	ServiceAccounts     map[string]*SAData           // key: "namespace/name"
 	Pods                map[string]*PodData          // key: "namespace/name"
-	Workloads           map[string]*WorkloadData     // key: "namespace/name"
+	Workloads           map[string]*WorkloadData     // key: "kind/namespace/name"
 }
 
 // NewLoadedResources creates an initialized LoadedResources with empty maps/slices.
@@ -160,12 +160,13 @@ func NewLoadedResources() *LoadedResources {
 }
 
 // IsEmpty returns true if no RBAC resources were loaded.
-// Workloads and Pods are not considered RBAC resources for this check.
+// Pods and Workloads are included since they reference ServiceAccounts that participate in privilege chains.
 func (r *LoadedResources) IsEmpty() bool {
 	return len(r.ClusterRoles) == 0 &&
 		len(r.Roles) == 0 &&
 		len(r.ClusterRoleBindings) == 0 &&
 		len(r.RoleBindings) == 0 &&
 		len(r.ServiceAccounts) == 0 &&
-		len(r.Pods) == 0
+		len(r.Pods) == 0 &&
+		len(r.Workloads) == 0
 }
