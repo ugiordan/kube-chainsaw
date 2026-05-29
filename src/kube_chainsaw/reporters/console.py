@@ -10,32 +10,20 @@ from kube_chainsaw.reporters import Reporter
 class ConsoleReporter(Reporter):
     """Human-readable console output reporter."""
 
-    def render(self, findings: List[Finding], include_scenarios: bool = False) -> str:
-        """Render findings to human-readable console output.
-
-        Args:
-            findings: List of findings to render.
-            include_scenarios: Whether to include attack scenarios in output.
-
-        Returns:
-            Formatted console output.
-        """
+    def render(self, findings: List[Finding]) -> str:
         if not findings:
             return "No findings.\n"
 
-        # Group findings by severity
         by_severity = defaultdict(list)
         for finding in findings:
             by_severity[finding.severity].append(finding)
 
-        # Build output with severity groups (CRITICAL first, descending)
         lines = []
         lines.append("=" * 80)
         lines.append("Security Findings Report")
         lines.append("=" * 80)
         lines.append("")
 
-        # Severity order: CRITICAL, HIGH, WARNING, INFO
         severity_order = [Severity.CRITICAL, Severity.HIGH, Severity.WARNING, Severity.INFO]
 
         for severity in severity_order:
@@ -53,15 +41,8 @@ class ConsoleReporter(Reporter):
                 lines.append(f"  Resource: {finding.resource_kind}/{finding.resource_name}")
                 lines.append(f"  Description: {finding.description}")
                 lines.append(f"  Remediation: {finding.remediation}")
-
-                if include_scenarios and finding.attack_scenarios:
-                    lines.append(f"  Attack Scenarios:")
-                    for scenario in finding.attack_scenarios:
-                        lines.append(f"    - {scenario}")
-
                 lines.append("")
 
-        # Add summary
         lines.append("=" * 80)
         lines.append(f"Total findings: {len(findings)}")
         for severity in severity_order:

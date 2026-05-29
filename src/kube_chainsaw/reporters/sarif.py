@@ -11,16 +11,7 @@ from kube_chainsaw.reporters import Reporter
 class SarifReporter(Reporter):
     """SARIF 2.1.0 output reporter."""
 
-    def render(self, findings: List[Finding], include_scenarios: bool = False) -> str:
-        """Render findings to SARIF 2.1.0 format.
-
-        Args:
-            findings: List of findings to render.
-            include_scenarios: Ignored, SARIF never includes attack scenarios.
-
-        Returns:
-            SARIF JSON string.
-        """
+    def render(self, findings: List[Finding]) -> str:
         # Build unique rules from findings
         rules_dict: Dict[str, Dict[str, Any]] = {}
         for finding in findings:

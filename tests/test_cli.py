@@ -166,13 +166,6 @@ def test_no_rbac_resources_warning(tmp_path):
     assert "No RBAC resources found" in result.stderr
 
 
-def test_include_attack_scenarios_flag(dangerous_dir):
-    """--include-attack-scenarios should trigger plugin loading."""
-    # This will emit a warning if plugin not installed
-    result = run_cli(str(dangerous_dir), "--include-attack-scenarios")
-    # Should still work even if plugin not installed
-    assert result.returncode in (0, 1)
-
 
 def test_suppressions_file(dangerous_dir, tmp_path):
     """--suppressions should load and apply suppression rules."""

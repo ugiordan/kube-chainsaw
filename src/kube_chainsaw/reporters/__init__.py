@@ -10,12 +10,11 @@ class Reporter(ABC):
     """Base class for all reporters."""
 
     @abstractmethod
-    def render(self, findings: List[Finding], include_scenarios: bool = False) -> str:
+    def render(self, findings: List[Finding]) -> str:
         """Render findings to output format.
 
         Args:
             findings: List of findings to render.
-            include_scenarios: Whether to include attack scenarios in output.
 
         Returns:
             Formatted output string.

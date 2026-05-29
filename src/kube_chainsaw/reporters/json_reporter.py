@@ -10,16 +10,7 @@ from kube_chainsaw.reporters import Reporter
 class JsonReporter(Reporter):
     """JSON output reporter."""
 
-    def render(self, findings: List[Finding], include_scenarios: bool = False) -> str:
-        """Render findings to JSON format.
-
-        Args:
-            findings: List of findings to render.
-            include_scenarios: Whether to include attack scenarios in output.
-
-        Returns:
-            JSON string with findings.
-        """
+    def render(self, findings: List[Finding]) -> str:
         findings_data: List[Dict[str, Any]] = []
 
         for finding in findings:
@@ -36,9 +27,6 @@ class JsonReporter(Reporter):
                 "fingerprint": finding.fingerprint,
                 "suppressed": finding.suppressed,
             }
-
-            if include_scenarios:
-                finding_dict["attack_scenarios"] = finding.attack_scenarios
 
             findings_data.append(finding_dict)
 

@@ -48,7 +48,6 @@ class Finding:
     resource_namespace: Optional[str] = None
     suppressed: bool = False
     fingerprint: str = ""
-    attack_scenarios: List[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Compute fingerprint if not set."""

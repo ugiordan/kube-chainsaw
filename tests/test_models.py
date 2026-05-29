@@ -154,7 +154,6 @@ class TestFinding:
         )
         assert finding.resource_namespace is None
         assert finding.suppressed is False
-        assert finding.attack_scenarios == []
 
 
 class TestLoadedResources:
