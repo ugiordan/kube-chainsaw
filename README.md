@@ -49,6 +49,15 @@ No existing tool does graph-level RBAC analysis on static manifests:
 | rbac-tool | No (live cluster) | Yes | No |
 | kubectl-who-can | No (live cluster) | No | No |
 
+## API Stability
+
+The following packages are considered stable public API:
+
+- `pkg/analyzer` - `Analyze()`, `KnownRuleIDs()`
+- `pkg/models` - `Finding`, `Severity`, `LoadedResources`, and all data types
+
+Breaking changes to these packages will follow semver. The `pkg/loader`, `pkg/reporter`, and `pkg/suppression` packages are internal and may change without notice.
+
 ## License
 
 Apache 2.0

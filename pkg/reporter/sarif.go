@@ -47,6 +47,11 @@ func (s *SARIFReporter) Render(findings []models.Finding) (string, error) {
 		result.WithLevel(level)
 		result.WithMessage(sarif.NewTextMessage(message))
 
+		// Add original severity to properties bag
+		props := sarif.NewPropertyBag()
+		props.Add("kube-chainsaw/severity", f.Severity.String())
+		result.Properties = props.Properties
+
 		// Add location
 		resource := f.ResourceKind + "/" + f.ResourceName
 		if f.ResourceNamespace != "" {

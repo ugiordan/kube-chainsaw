@@ -176,3 +176,24 @@ func TestSARIFReporter_SeverityMapping(t *testing.T) {
 		})
 	}
 }
+
+func TestSARIFSeverityProperties(t *testing.T) {
+	f := models.Finding{
+		RuleID:       "KC-013",
+		Severity:     models.SeverityCritical,
+		Title:        "Pod running with cluster-admin privileges",
+		File:         "test.yaml",
+		Description:  "test",
+		Remediation:  "fix it",
+		ResourceKind: "Pod",
+		ResourceName: "admin-pod",
+	}
+	f.ComputeFingerprint()
+
+	r := &SARIFReporter{}
+	out, err := r.Render([]models.Finding{f})
+	require.NoError(t, err)
+
+	assert.Contains(t, out, `"kube-chainsaw/severity"`)
+	assert.Contains(t, out, `"CRITICAL"`)
+}
