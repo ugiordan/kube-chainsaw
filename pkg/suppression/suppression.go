@@ -58,23 +58,23 @@ func LoadSuppressions(path string) ([]Suppression, error) {
 		}
 		// NEW-3: validate rule_id matches known pattern
 		if !isValidRuleID(s.RuleID) {
-			fmt.Fprintf(os.Stderr, "warning: suppression entry %d in %q has unrecognized rule_id %q (expected KC-001 through KC-015)\n", i, path, s.RuleID)
+			fmt.Fprintf(os.Stderr, "warning: suppression entry %d in %q has unrecognized rule_id %q (expected KC-NNN pattern)\n", i, path, s.RuleID)
 		}
 	}
 
 	return sf.Suppressions, nil
 }
 
-// isValidRuleID checks if a rule_id follows the expected pattern (KC-001 through KC-015)
+// isValidRuleID checks if a rule_id follows the KC-NNN pattern.
+// Does not bound the numeric range so new rules are accepted without code changes.
 func isValidRuleID(ruleID string) bool {
-	// Known rule IDs: KC-001 through KC-015
 	if len(ruleID) != 6 || ruleID[:3] != "KC-" {
 		return false
 	}
-	// Extract numeric part
-	numPart := ruleID[3:]
-	if numPart < "001" || numPart > "015" {
-		return false
+	for _, c := range ruleID[3:] {
+		if c < '0' || c > '9' {
+			return false
+		}
 	}
 	return true
 }

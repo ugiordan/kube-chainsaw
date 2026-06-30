@@ -60,13 +60,15 @@ type Finding struct {
 	ResourceName      string
 	ResourceNamespace string // empty for cluster-scoped resources
 	Suppressed        bool
-	Fingerprint       string // SHA256 of "rule_id|resource_kind|resource_name|namespace|file"
+	Fingerprint       string // SHA256 of "rule_id|resource_kind|resource_name|namespace"
 }
 
 // ComputeFingerprint fills the Fingerprint field with a SHA256 hash
-// derived from the finding's identifying fields, including the file path.
+// derived from the finding's identity fields. File path is excluded so
+// fingerprints remain stable across different invocation contexts
+// (standalone CLI vs. kube-linter integration, relative vs. absolute paths).
 func (f *Finding) ComputeFingerprint() {
-	data := fmt.Sprintf("%s|%s|%s|%s|%s", f.RuleID, f.ResourceKind, f.ResourceName, f.ResourceNamespace, f.File)
+	data := fmt.Sprintf("%s|%s|%s|%s", f.RuleID, f.ResourceKind, f.ResourceName, f.ResourceNamespace)
 	hash := sha256.Sum256([]byte(data))
 	f.Fingerprint = fmt.Sprintf("%x", hash)
 }

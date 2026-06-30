@@ -1,6 +1,10 @@
 package analyzer
 
-import "github.com/ugiordan/kube-chainsaw/pkg/models"
+import (
+	"sort"
+
+	"github.com/ugiordan/kube-chainsaw/pkg/models"
+)
 
 // Rule IDs and their descriptions.
 const (
@@ -20,6 +24,17 @@ const (
 	RuleRoleBindingClusterRef = "KC-014"
 	RuleAggregatedClusterRole = "KC-015"
 )
+
+// KnownRuleIDs returns all valid KC rule IDs. Used by external integrations
+// (e.g., kube-linter template) for dynamic parameter validation.
+func KnownRuleIDs() []string {
+	ids := make([]string, 0, len(ruleDescriptions))
+	for id := range ruleDescriptions {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
 
 // dangerousVerbs maps verbs to the rule they trigger.
 var dangerousVerbs = map[string]string{

@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -474,4 +475,28 @@ func TestWorkloadPrivilegeChains(t *testing.T) {
 		}
 	}
 	assert.True(t, hasWorkloadFinding, "expected at least one KC-013 finding from a workload controller")
+}
+
+func TestKnownRuleIDs(t *testing.T) {
+	ids := KnownRuleIDs()
+
+	assert.Len(t, ids, 15, "expected 15 known rule IDs")
+
+	for _, id := range ids {
+		assert.Len(t, id, 6, "rule ID %q should be 6 chars", id)
+		assert.Equal(t, "KC-", id[:3], "rule ID %q should start with KC-", id)
+	}
+
+	assert.True(t, sort.StringsAreSorted(ids), "KnownRuleIDs() should return sorted IDs")
+
+	expected := []string{
+		RuleWildcardResources, RuleWildcardVerbs, RuleEscalateVerb,
+		RuleImpersonateVerb, RuleBindVerb, RuleSecretsAccess,
+		RulePodsExecAttach, RuleNodesAccess, RulePVAccess,
+		RuleRBACModification, RuleEscalationBindings, RuleEscalationPodCreation,
+		RuleClusterAdminPod, RuleRoleBindingClusterRef, RuleAggregatedClusterRole,
+	}
+	for _, exp := range expected {
+		assert.Contains(t, ids, exp, "KnownRuleIDs() should contain %s", exp)
+	}
 }

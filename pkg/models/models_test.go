@@ -96,7 +96,7 @@ func TestFindingFingerprint(t *testing.T) {
 	f3.ComputeFingerprint()
 	assert.NotEqual(t, f.Fingerprint, f3.Fingerprint)
 
-	// Different file path produces different fingerprint
+	// Different file path does NOT change fingerprint (path-independent for cross-tool stability)
 	f4 := Finding{
 		RuleID:            "KC-001",
 		ResourceKind:      "ClusterRole",
@@ -105,7 +105,7 @@ func TestFindingFingerprint(t *testing.T) {
 		File:              "other.yaml",
 	}
 	f4.ComputeFingerprint()
-	assert.NotEqual(t, f.Fingerprint, f4.Fingerprint)
+	assert.Equal(t, f.Fingerprint, f4.Fingerprint)
 }
 
 func TestFindingFingerprintClusterScoped(t *testing.T) {
