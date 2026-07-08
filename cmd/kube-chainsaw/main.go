@@ -26,6 +26,9 @@ var (
 	noDefaultExcludes bool
 	suppressionsPath  string
 	quiet             bool
+	fromCluster       bool
+	namespace         string
+	kubeconfig        string
 )
 
 // Finding 9: sentinel error for threshold exceeded (instead of os.Exit inside RunE)
@@ -46,7 +49,7 @@ var rootCmd = &cobra.Command{
 	Use:   "kube-chainsaw [paths...]",
 	Short: "Kubernetes RBAC security analyzer",
 	Long:  "kube-chainsaw scans Kubernetes RBAC manifests for overly permissive roles, privilege escalation risks, and security misconfigurations.",
-	Args:  cobra.MinimumNArgs(1),
+	Args:  cobra.ArbitraryArgs,
 	RunE:  run,
 	// Silence Cobra's built-in error/usage printing so we control output
 	SilenceErrors: true,
@@ -63,6 +66,9 @@ func init() {
 	rootCmd.Flags().BoolVar(&noDefaultExcludes, "no-default-excludes", false, "disable default directory exclusions (.git, vendor, node_modules, bin)")
 	rootCmd.Flags().StringVar(&suppressionsPath, "suppressions", "", "path to suppressions YAML file")
 	rootCmd.Flags().BoolVar(&quiet, "quiet", false, "suppress stdout output")
+	rootCmd.Flags().BoolVar(&fromCluster, "from-cluster", false, "fetch RBAC resources from a live cluster via kubectl")
+	rootCmd.Flags().StringVar(&namespace, "namespace", "", "namespace to scan (used with --from-cluster; defaults to all namespaces)")
+	rootCmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "path to kubeconfig file (used with --from-cluster)")
 }
 
 func run(cmd *cobra.Command, args []string) error {
@@ -87,9 +93,23 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 1: Load manifests
-	resources, err := loader.LoadManifests(args, loaderOpts)
-	if err != nil {
-		return fmt.Errorf("loading manifests: %w", err)
+	var resources *models.LoadedResources
+	if fromCluster {
+		resources, err = loader.LoadFromCluster(loader.ClusterOptions{
+			Namespace:  namespace,
+			Kubeconfig: kubeconfig,
+		})
+		if err != nil {
+			return fmt.Errorf("loading from cluster: %w", err)
+		}
+	} else {
+		if len(args) == 0 {
+			return fmt.Errorf("at least one path is required (or use --from-cluster)")
+		}
+		resources, err = loader.LoadManifests(args, loaderOpts)
+		if err != nil {
+			return fmt.Errorf("loading manifests: %w", err)
+		}
 	}
 
 	// Finding 15: warn when no RBAC resources are found

@@ -2,6 +2,7 @@ package suppression
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/ugiordan/kube-chainsaw/pkg/models"
@@ -29,16 +30,22 @@ type SuppressionFile struct {
 // LoadSuppressions reads and parses a suppressions YAML file.
 // Finding 13: enforces file size limit and validates entries.
 func LoadSuppressions(path string) ([]Suppression, error) {
-	info, err := os.Stat(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read suppressions file %q: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat suppressions file %q: %w", path, err)
 	}
 
 	if info.Size() > MaxSuppressionFileSize {
 		return nil, fmt.Errorf("suppressions file %q exceeds maximum size (%d > %d bytes)", path, info.Size(), MaxSuppressionFileSize)
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read suppressions file %q: %w", path, err)
 	}

@@ -2,6 +2,7 @@ package loader
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -165,18 +166,11 @@ func processFile(path string, opts *Options, result *models.LoadedResources) err
 		return err
 	}
 
-	// Skip symlinks
-	if info.Mode()&fs.ModeSymlink != 0 {
-		return fmt.Errorf("symlink detected, skipping")
-	}
-
 	if info.Size() > opts.MaxFileSize {
 		return fmt.Errorf("file %q exceeds max size (%d > %d)", path, info.Size(), opts.MaxFileSize)
 	}
 
-	// Read from the already-opened file descriptor
-	data := make([]byte, info.Size())
-	_, err = f.Read(data)
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return err
 	}
@@ -224,6 +218,19 @@ func splitYAMLDocs(content string) []string {
 
 func categorize(doc map[string]interface{}, file string, result *models.LoadedResources) {
 	kind, _ := doc["kind"].(string)
+
+	// Unwrap Kubernetes List responses (e.g., from kubectl get -o yaml)
+	if strings.HasSuffix(kind, "List") {
+		if items, ok := doc["items"].([]interface{}); ok {
+			for _, item := range items {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					categorize(itemMap, file, result)
+				}
+			}
+		}
+		return
+	}
+
 	metadata, _ := doc["metadata"].(map[string]interface{})
 	if metadata == nil {
 		return
