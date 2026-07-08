@@ -157,7 +157,7 @@ func processFile(path string, opts *Options, result *models.LoadedResources) err
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Fstat on the open file descriptor (no TOCTOU)
 	info, err := f.Stat()
