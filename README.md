@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="site/docs/images/logo.svg" alt="kube-chainsaw logo" width="120">
+</p>
+
 # kube-chainsaw
 
 Graph-level RBAC privilege chain analysis for Kubernetes manifests.
