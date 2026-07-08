@@ -44,7 +44,7 @@ func (c *ConsoleReporter) Render(findings []models.Finding) (string, error) {
 			return group[i].RuleID < group[j].RuleID
 		})
 
-		b.WriteString(fmt.Sprintf("=== %s ===\n", sev.String()))
+		fmt.Fprintf(&b, "=== %s ===\n", sev.String())
 
 		for _, f := range group {
 			resource := f.ResourceKind + "/" + f.ResourceName
@@ -57,14 +57,14 @@ func (c *ConsoleReporter) Render(findings []models.Finding) (string, error) {
 				suppressed = " [SUPPRESSED]"
 			}
 
-			b.WriteString(fmt.Sprintf("\n  [%s] %s%s\n", f.RuleID, f.Title, suppressed))
-			b.WriteString(fmt.Sprintf("    File:        %s\n", f.File))
-			b.WriteString(fmt.Sprintf("    Resource:    %s\n", resource))
+			fmt.Fprintf(&b, "\n  [%s] %s%s\n", f.RuleID, f.Title, suppressed)
+			fmt.Fprintf(&b, "    File:        %s\n", f.File)
+			fmt.Fprintf(&b, "    Resource:    %s\n", resource)
 			if f.Description != "" {
-				b.WriteString(fmt.Sprintf("    Description: %s\n", f.Description))
+				fmt.Fprintf(&b, "    Description: %s\n", f.Description)
 			}
 			if f.Remediation != "" {
-				b.WriteString(fmt.Sprintf("    Remediation: %s\n", f.Remediation))
+				fmt.Fprintf(&b, "    Remediation: %s\n", f.Remediation)
 			}
 		}
 
@@ -82,9 +82,9 @@ func (c *ConsoleReporter) Render(findings []models.Finding) (string, error) {
 		}
 	}
 
-	b.WriteString(fmt.Sprintf("Total: %d findings", total))
+	fmt.Fprintf(&b, "Total: %d findings", total)
 	if suppressed > 0 {
-		b.WriteString(fmt.Sprintf(" (%d suppressed)", suppressed))
+		fmt.Fprintf(&b, " (%d suppressed)", suppressed)
 	}
 
 	parts := []string{}
