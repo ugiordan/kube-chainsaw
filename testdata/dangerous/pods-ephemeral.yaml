@@ -1,0 +1,21 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ephemeral-containers-role
+rules:
+  - apiGroups: [""]
+    resources: ["pods/ephemeralcontainers"]
+    verbs: ["get", "create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ephemeral-containers-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ephemeral-containers-role
+subjects:
+  - kind: ServiceAccount
+    name: debug-sa
+    namespace: debug-system

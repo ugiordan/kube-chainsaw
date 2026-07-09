@@ -477,6 +477,85 @@ func TestWorkloadPrivilegeChains(t *testing.T) {
 	assert.True(t, hasWorkloadFinding, "expected at least one KC-013 finding from a workload controller")
 }
 
+func TestPodsLogDetection(t *testing.T) {
+	resources := loadFixture(t, "dangerous", "pods-log.yaml")
+	findings := Analyze(resources)
+
+	assert.True(t, hasRule(findings, "KC-007"),
+		"expected KC-007 for pods/log access")
+
+	matched := findingsWithRule(findings, "KC-007")
+	require.NotEmpty(t, matched)
+	assert.Contains(t, matched[0].Description, "pods/log")
+	assert.Equal(t, models.SeverityHigh, matched[0].Severity,
+		"cluster-wide pods/log should be HIGH")
+}
+
+func TestPodsEphemeralContainersDetection(t *testing.T) {
+	resources := loadFixture(t, "dangerous", "pods-ephemeral.yaml")
+	findings := Analyze(resources)
+
+	assert.True(t, hasRule(findings, "KC-007"),
+		"expected KC-007 for pods/ephemeralcontainers access")
+
+	matched := findingsWithRule(findings, "KC-007")
+	require.NotEmpty(t, matched)
+	assert.Contains(t, matched[0].Description, "pods/ephemeralcontainers")
+}
+
+func TestNodesProxyDetection(t *testing.T) {
+	resources := loadFixture(t, "dangerous", "nodes-proxy.yaml")
+	findings := Analyze(resources)
+
+	assert.True(t, hasRule(findings, "KC-008"),
+		"expected KC-008 for nodes/proxy access")
+
+	matched := findingsWithRule(findings, "KC-008")
+	require.NotEmpty(t, matched)
+	assert.Contains(t, matched[0].Description, "nodes/proxy")
+	assert.Equal(t, models.SeverityHigh, matched[0].Severity,
+		"cluster-wide nodes/proxy should be HIGH")
+}
+
+func TestPodsLogWrongApiGroupNoFinding(t *testing.T) {
+	resources := models.NewLoadedResources()
+	resources.ClusterRoles["custom-pods-log"] = &models.ClusterRoleData{
+		Rules: []map[string]interface{}{
+			{
+				"apiGroups": []interface{}{"custom.example.com"},
+				"resources": []interface{}{"pods/log"},
+				"verbs":     []interface{}{"get"},
+			},
+		},
+		File: "test.yaml",
+		Doc:  map[string]interface{}{"kind": "ClusterRole", "metadata": map[string]interface{}{"name": "custom-pods-log"}},
+	}
+
+	findings := Analyze(resources)
+	assert.False(t, hasRule(findings, "KC-007"),
+		"pods/log in non-core apiGroup should not trigger KC-007")
+}
+
+func TestMultiplePodSubresourcesDeduplicated(t *testing.T) {
+	resources := models.NewLoadedResources()
+	resources.ClusterRoles["multi-pod-subresources"] = &models.ClusterRoleData{
+		Rules: []map[string]interface{}{
+			{
+				"apiGroups": []interface{}{""},
+				"resources": []interface{}{"pods/exec", "pods/attach", "pods/log", "pods/ephemeralcontainers"},
+				"verbs":     []interface{}{"get", "create"},
+			},
+		},
+		File: "test.yaml",
+		Doc:  map[string]interface{}{"kind": "ClusterRole", "metadata": map[string]interface{}{"name": "multi-pod-subresources"}},
+	}
+
+	findings := Analyze(resources)
+	matched := findingsWithRule(findings, "KC-007")
+	assert.Len(t, matched, 1,
+		"multiple pod subresources in same role should produce 1 deduplicated KC-007 finding")
+}
+
 func TestKnownRuleIDs(t *testing.T) {
 	ids := KnownRuleIDs()
 
