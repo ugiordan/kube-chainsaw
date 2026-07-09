@@ -259,9 +259,7 @@ rules: []
 }
 
 func TestLoadFromClusterMissingKubectl(t *testing.T) {
-	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", "/nonexistent")
-	defer os.Setenv("PATH", origPath)
 
 	_, err := LoadFromCluster(ClusterOptions{})
 	require.Error(t, err)
