@@ -27,7 +27,7 @@ func LoadFromCluster(clusterOpts ClusterOptions) (*models.LoadedResources, error
 	if err != nil {
 		return nil, fmt.Errorf("creating temp directory: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Cluster-scoped resources are always fetched globally
 	if err := fetchResources(kubectlPath, "clusterroles,clusterrolebindings", "", clusterOpts.Kubeconfig, filepath.Join(tmpDir, "cluster-scoped.yaml")); err != nil {
