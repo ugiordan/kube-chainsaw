@@ -129,6 +129,24 @@ kube-chainsaw found 4 issues: the operator has secrets access, can modify RBAC, 
 
 ---
 
+## Alternative: Scan a Live Cluster
+
+Instead of scanning local files, point kube-chainsaw at a running cluster:
+
+```bash
+$ kube-chainsaw --from-cluster --fail-on HIGH
+```
+
+This fetches all RBAC resources and workloads via kubectl and runs the same analysis. Scope to a specific namespace with `--namespace`:
+
+```bash
+$ kube-chainsaw --from-cluster --namespace my-app --fail-on HIGH
+```
+
+Requires `kubectl` in your PATH and a valid kubeconfig (or use `--kubeconfig` to specify one).
+
+---
+
 ## Step 4: CI Integration
 
 Fail the pipeline on CRITICAL or HIGH findings:

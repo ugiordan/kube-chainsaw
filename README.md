@@ -6,7 +6,7 @@
 
 Graph-level RBAC privilege chain analysis for Kubernetes manifests.
 
-kube-chainsaw builds permission graphs from static YAML manifests (ServiceAccount -> RoleBinding -> Role -> verb/resource), detecting indirect privilege escalation paths that per-object linters like kube-linter cannot catch. It runs 15 detection rules across three categories: risky permissions, workload-to-cluster-admin chains, and aggregated ClusterRole analysis.
+kube-chainsaw builds permission graphs from YAML manifests or live clusters (ServiceAccount -> RoleBinding -> Role -> verb/resource), detecting indirect privilege escalation paths that per-object linters like kube-linter cannot catch. It runs 15 detection rules across three categories: risky permissions, workload-to-cluster-admin chains, and aggregated ClusterRole analysis.
 
 **[Documentation](https://ugiordan.github.io/kube-chainsaw/)** | **[Detection Rules Reference](https://ugiordan.github.io/kube-chainsaw/reference/rules/)** | **[Blog Post](https://developers.redhat.com/articles/2026/07/07/why-your-rbac-linter-misses-privilege-escalation-chains-and-how-fix-it)**
 
@@ -34,8 +34,19 @@ sudo mv kube-chainsaw /usr/local/bin/
 
 ## Quick Start
 
+Scan local manifests:
 ```bash
 kube-chainsaw config/ deploy/ --fail-on HIGH
+```
+
+Scan a live cluster:
+```bash
+kube-chainsaw --from-cluster --fail-on HIGH
+```
+
+Scan a specific namespace:
+```bash
+kube-chainsaw --from-cluster --namespace my-app --fail-on HIGH
 ```
 
 Example output:
@@ -69,15 +80,15 @@ Severity adjusts based on binding scope: cluster-wide bindings are HIGH/CRITICAL
 
 ## Why kube-chainsaw?
 
-| Tool | Static Analysis | Graph Traversal | Privilege Chains | Workload Analysis |
-|------|:-:|:-:|:-:|:-:|
-| **kube-chainsaw** | Yes | Yes | Yes | Yes |
-| kube-linter | Yes | No | No | No |
-| KubiScan | No (live cluster) | Yes | Yes | No |
-| rbac-tool | No (live cluster) | Yes | No | No |
-| kubectl-who-can | No (live cluster) | Yes | No | No |
+| Tool | Static Analysis | Live Cluster | Graph Traversal | Privilege Chains | Workload Analysis |
+|------|:-:|:-:|:-:|:-:|:-:|
+| **kube-chainsaw** | Yes | Yes | Yes | Yes | Yes |
+| kube-linter | Yes | No | No | No | No |
+| KubiScan | No | Yes | Yes | Yes | No |
+| rbac-tool | No | Yes | Yes | No | No |
+| kubectl-who-can | No | Yes | Yes | No | No |
 
-kube-chainsaw is the only tool that performs static graph traversal on YAML manifests to detect privilege escalation chains before deployment, requiring no live cluster.
+kube-chainsaw performs graph traversal on YAML manifests to detect privilege escalation chains. It works on static files (pre-deployment) or live clusters via `--from-cluster` (using kubectl).
 
 ## Output Formats
 

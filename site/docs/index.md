@@ -21,6 +21,7 @@ kube-chainsaw analyzes Kubernetes RBAC manifests by building a directed graph of
 graph LR
     subgraph Input
         A[YAML Manifests]
+        A2[Live Cluster]
     end
 
     subgraph "kube-chainsaw"
@@ -36,6 +37,7 @@ graph LR
     end
 
     A --> B
+    A2 -->|kubectl| B
     E --> F
     E --> G
     E --> H
@@ -43,7 +45,7 @@ graph LR
 
 **Pipeline:**
 
-1. **Loader** parses YAML manifests (ClusterRoles, Roles, Bindings, ServiceAccounts, Pods, Deployments, Jobs)
+1. **Loader** parses YAML manifests from local files or fetches them from a live cluster via kubectl (ClusterRoles, Roles, Bindings, ServiceAccounts, Pods, Deployments, Jobs)
 2. **Graph Builder** maps SA -> Binding -> Role -> verb/resource permission chains
 3. **15 Detection Rules** (KC-001 through KC-015) identify dangerous patterns, wildcards, escalation paths
 4. **Severity Engine** adjusts severity based on binding scope (cluster-wide vs namespace-scoped vs unbound)
@@ -122,15 +124,15 @@ kube-chainsaw config/ --format sarif --output results.sarif
 
 ## Comparison
 
-| Tool | Static Analysis | Graph Traversal | Privilege Chains | Workload Analysis |
-|------|:-:|:-:|:-:|:-:|
-| **kube-chainsaw** | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
-| kube-linter | :white_check_mark: | :x: | :x: | :x: |
-| KubiScan | :x: | :white_check_mark: | :white_check_mark: | :x: |
-| rbac-tool | :x: | :white_check_mark: | :x: | :x: |
-| kubectl-who-can | :x: | :white_check_mark: | :x: | :x: |
+| Tool | Static Analysis | Live Cluster | Graph Traversal | Privilege Chains | Workload Analysis |
+|------|:-:|:-:|:-:|:-:|:-:|
+| **kube-chainsaw** | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
+| kube-linter | :white_check_mark: | :x: | :x: | :x: | :x: |
+| KubiScan | :x: | :white_check_mark: | :white_check_mark: | :white_check_mark: | :x: |
+| rbac-tool | :x: | :white_check_mark: | :white_check_mark: | :x: | :x: |
+| kubectl-who-can | :x: | :white_check_mark: | :white_check_mark: | :x: | :x: |
 
-kube-chainsaw is the only tool that performs **static graph traversal** on YAML manifests to detect privilege escalation chains before deployment. No live cluster required.
+kube-chainsaw performs graph traversal on YAML manifests or live clusters to detect privilege escalation chains. It works pre-deployment on static files or post-deployment via `--from-cluster`.
 
 ---
 
@@ -144,11 +146,11 @@ kube-chainsaw is the only tool that performs **static graph traversal** on YAML 
 
     Builds SA -> Binding -> Role -> verb/resource permission graphs. Detects multi-hop privilege escalation paths that flat rule-based linters miss.
 
--   :material-shield-check:{ .lg .middle } **Static Analysis**
+-   :material-shield-check:{ .lg .middle } **Static + Live Analysis**
 
     ---
 
-    Analyzes manifests before deployment. No runtime access required. Works in CI pipelines and local development.
+    Analyzes manifests before deployment or scans a live cluster via `--from-cluster`. Works in CI pipelines, local development, and production audits.
 
 -   :material-file-document:{ .lg .middle } **SARIF Output**
 

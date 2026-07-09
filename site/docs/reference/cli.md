@@ -8,11 +8,12 @@ Complete reference for the `kube-chainsaw` command-line interface.
 
 ```bash
 kube-chainsaw [paths...] [OPTIONS]
+kube-chainsaw --from-cluster [OPTIONS]
 ```
 
 **Arguments:**
 
-- `paths`: One or more directories or files to scan (required)
+- `paths`: One or more directories or files to scan (required unless `--from-cluster` is used)
 
 ---
 
@@ -22,6 +23,9 @@ kube-chainsaw [paths...] [OPTIONS]
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--from-cluster` | Fetch RBAC resources from a live cluster via kubectl | `false` |
+| `--namespace NS` | Namespace to scan (used with `--from-cluster`, defaults to all namespaces) | `""` |
+| `--kubeconfig PATH` | Path to kubeconfig file (used with `--from-cluster`) | `""` |
 | `--exclude-dirs DIRS` | Comma-separated directory names to skip | `""` |
 | `--no-default-excludes` | Disable default exclusions (.git, vendor, node_modules, bin) | `false` |
 
@@ -61,6 +65,24 @@ kube-chainsaw [paths...] [OPTIONS]
 ---
 
 ## Examples
+
+### Scan a live cluster (all namespaces):
+
+```bash
+kube-chainsaw --from-cluster --fail-on HIGH
+```
+
+### Scan a specific namespace on a live cluster:
+
+```bash
+kube-chainsaw --from-cluster --namespace my-app --fail-on HIGH
+```
+
+### Scan with a specific kubeconfig:
+
+```bash
+kube-chainsaw --from-cluster --kubeconfig ~/.kube/staging-config
+```
 
 ### Scan a directory with default settings:
 
