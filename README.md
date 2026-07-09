@@ -24,6 +24,14 @@ curl -sL https://github.com/ugiordan/kube-chainsaw/releases/latest/download/kube
 sudo mv kube-chainsaw /usr/local/bin/
 ```
 
+### Container (Docker / Podman)
+```bash
+docker run --rm -v $(pwd):/scan ghcr.io/ugiordan/kube-chainsaw:latest /scan/config
+```
+```bash
+podman run --rm -v $(pwd):/scan ghcr.io/ugiordan/kube-chainsaw:latest /scan/config
+```
+
 ### GitHub Action
 ```yaml
 - uses: ugiordan/kube-chainsaw@v1

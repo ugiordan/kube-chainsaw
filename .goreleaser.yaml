@@ -23,6 +23,16 @@ archives:
       - goos: windows
         format: zip
 
+dockers:
+  - image_templates:
+      - "ghcr.io/ugiordan/kube-chainsaw:{{ .Version }}"
+      - "ghcr.io/ugiordan/kube-chainsaw:latest"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--label=org.opencontainers.image.source=https://github.com/ugiordan/kube-chainsaw"
+      - "--label=org.opencontainers.image.description=Graph-level RBAC privilege chain analysis for Kubernetes manifests"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+
 checksum:
   name_template: "checksums.txt"
 
