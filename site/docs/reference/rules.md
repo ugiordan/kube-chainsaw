@@ -142,15 +142,22 @@ rules:
 
 ---
 
-## KC-007: Pod Exec/Attach Access
+## KC-007: Dangerous Pod Subresource Access
 
 **Severity:** Varies by binding scope
 
-**Description:** Detects roles with access to `pods/exec` or `pods/attach` subresources in the core API group. Only triggers when the apiGroup is the core group or wildcard.
+**Description:** Detects roles with access to dangerous pod subresources in the core API group: `pods/exec`, `pods/attach`, `pods/log`, and `pods/ephemeralcontainers`. Only triggers when the apiGroup is the core group or wildcard.
 
-**Impact:** Allows execution of arbitrary commands inside running containers or attaching to container processes, which can lead to container escape or credential theft.
+**Impact:**
 
-**Example:**
+- `pods/exec`: remote code execution inside running containers
+- `pods/attach`: interactive shell access to container processes
+- `pods/log`: exfiltration of log data from any pod (may contain secrets, tokens, PII)
+- `pods/ephemeralcontainers`: injection of debug containers into running pods
+
+When granted cluster-wide, a compromised ServiceAccount can access pods in any namespace, not just the namespaces the operator manages.
+
+**Examples:**
 
 ```yaml
 rules:
@@ -159,7 +166,14 @@ rules:
   verbs: ["create"]
 ```
 
-**Recommendation:** Restrict exec/attach to specific namespaces and add audit logging. Grant only to operators and CI/CD systems that require it.
+```yaml
+rules:
+- apiGroups: [""]
+  resources: ["pods/log"]  # Triggers KC-007
+  verbs: ["get"]
+```
+
+**Recommendation:** Restrict pod subresource access (exec, attach, log, ephemeralcontainers) to specific namespaces and add audit logging. Use namespace-scoped Roles instead of ClusterRoles when possible.
 
 ---
 
@@ -167,11 +181,11 @@ rules:
 
 **Severity:** Varies by binding scope
 
-**Description:** Detects roles with access to `nodes` resources in the core API group. Only triggers when the apiGroup is the core group or wildcard.
+**Description:** Detects roles with access to `nodes` or `nodes/proxy` resources in the core API group. Only triggers when the apiGroup is the core group or wildcard.
 
-**Impact:** Grants access to node-level operations. Write access to nodes can allow modification of node labels, taints, and conditions, potentially disrupting scheduling or enabling privilege escalation via node-level attacks.
+**Impact:** Grants access to node-level operations. Write access to nodes can allow modification of node labels, taints, and conditions. `nodes/proxy` grants direct access to the Kubelet API on any node, enabling pod listing, log reading, and command execution at the node level, bypassing RBAC entirely.
 
-**Example:**
+**Examples:**
 
 ```yaml
 rules:
@@ -180,7 +194,14 @@ rules:
   verbs: ["get", "list", "watch", "update"]
 ```
 
-**Recommendation:** Limit node access to monitoring verbs (get, list, watch) unless node management is explicitly required.
+```yaml
+rules:
+- apiGroups: [""]
+  resources: ["nodes/proxy"]  # Triggers KC-008
+  verbs: ["get", "create"]
+```
+
+**Recommendation:** Limit node and node/proxy access to monitoring verbs (get, list, watch) unless node management is explicitly required. Never grant nodes/proxy unless the component requires direct Kubelet API access.
 
 ---
 
