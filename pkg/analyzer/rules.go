@@ -46,24 +46,30 @@ var dangerousVerbs = map[string]string{
 
 // dangerousResources maps resource names to the rule they trigger.
 var dangerousResources = map[string]string{
-	"*":                   RuleWildcardResources,
-	"secrets":             RuleSecretsAccess,
-	"pods/exec":           RulePodsExecAttach,
-	"pods/attach":         RulePodsExecAttach,
-	"nodes":               RuleNodesAccess,
-	"persistentvolumes":   RulePVAccess,
-	"clusterroles":        RuleRBACModification,
-	"clusterrolebindings": RuleRBACModification,
+	"*":                      RuleWildcardResources,
+	"secrets":                RuleSecretsAccess,
+	"pods/exec":              RulePodsExecAttach,
+	"pods/attach":            RulePodsExecAttach,
+	"pods/log":               RulePodsExecAttach,
+	"pods/ephemeralcontainers": RulePodsExecAttach,
+	"nodes":                  RuleNodesAccess,
+	"nodes/proxy":            RuleNodesAccess,
+	"persistentvolumes":      RulePVAccess,
+	"clusterroles":           RuleRBACModification,
+	"clusterrolebindings":    RuleRBACModification,
 }
 
 // coreGroupResources are resources that should only trigger when apiGroups
 // contains "" (core group) or "*".
 var coreGroupResources = map[string]bool{
-	"secrets":           true,
-	"pods/exec":         true,
-	"pods/attach":       true,
-	"nodes":             true,
-	"persistentvolumes": true,
+	"secrets":                true,
+	"pods/exec":              true,
+	"pods/attach":            true,
+	"pods/log":               true,
+	"pods/ephemeralcontainers": true,
+	"nodes":                  true,
+	"nodes/proxy":            true,
+	"persistentvolumes":      true,
 }
 
 // rbacGroupResources are resources that should only trigger when apiGroups
@@ -110,7 +116,7 @@ var ruleDescriptions = map[string]string{
 	RuleImpersonateVerb:       "Impersonate verb permission",
 	RuleBindVerb:              "Bind verb permission",
 	RuleSecretsAccess:         "Secrets access",
-	RulePodsExecAttach:        "Pod exec/attach access",
+	RulePodsExecAttach:        "Dangerous pod subresource access",
 	RuleNodesAccess:           "Node-level access",
 	RulePVAccess:              "PersistentVolume access",
 	RuleRBACModification:      "RBAC modification capability",
@@ -129,8 +135,8 @@ var ruleRemediations = map[string]string{
 	RuleImpersonateVerb:       "Remove the 'impersonate' verb unless required for proxy or delegation",
 	RuleBindVerb:              "Remove the 'bind' verb unless required for RBAC management",
 	RuleSecretsAccess:         "Restrict secrets access to specific namespaces and only the verbs needed",
-	RulePodsExecAttach:        "Restrict exec/attach to specific namespaces and add audit logging",
-	RuleNodesAccess:           "Limit node access to monitoring verbs (get, list, watch)",
+	RulePodsExecAttach:        "Restrict pod subresource access (exec, attach, log, ephemeralcontainers) to specific namespaces and add audit logging",
+	RuleNodesAccess:           "Limit node and node/proxy access to monitoring verbs (get, list, watch)",
 	RulePVAccess:              "Limit PV access to read-only verbs unless storage management is required",
 	RuleRBACModification:      "Limit RBAC modification to dedicated admin roles with proper audit",
 	RuleEscalationBindings:    "Restrict ability to create/modify roles and bindings to admin users only",
