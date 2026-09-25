@@ -7,7 +7,7 @@ import (
 	"github.com/ugiordan/kube-chainsaw/pkg/models"
 )
 
-// Analyze examines loaded RBAC resources and returns security findings.
+// Analyze examines loaded security-relevant resources and returns findings.
 func Analyze(resources *models.LoadedResources) []models.Finding {
 	if resources == nil || resources.IsEmpty() {
 		return nil
@@ -35,7 +35,10 @@ func Analyze(resources *models.LoadedResources) []models.Finding {
 		findings = append(findings, checkRules(role.Rules, extractNameFromKey(key), "Role", role.Namespace, role.File, &scope, true)...)
 	}
 
-	// Phase 3: Privilege chain analysis
+	// Phase 3: NetworkPolicy analysis
+	findings = append(findings, analyzeNetworkPolicies(resources)...)
+
+	// Phase 4: Privilege chain analysis
 	findings = append(findings, analyzePrivilegeChains(resources)...)
 
 	return findings

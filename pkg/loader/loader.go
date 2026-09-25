@@ -299,6 +299,22 @@ func categorize(doc map[string]interface{}, file string, result *models.LoadedRe
 			Doc:                doc,
 		}
 
+	case "NetworkPolicy":
+		apiVersion, _ := doc["apiVersion"].(string)
+		if apiVersion != "networking.k8s.io/v1" {
+			return
+		}
+		key := namespace + "/" + name
+		if _, exists := result.NetworkPolicies[key]; exists {
+			fmt.Fprintf(os.Stderr, "warning: duplicate NetworkPolicy %q found in %s, previous entry will be overwritten\n", key, file)
+		}
+		result.NetworkPolicies[key] = &models.NetworkPolicyData{
+			Name:      name,
+			Namespace: namespace,
+			File:      file,
+			Doc:       doc,
+		}
+
 	default:
 		// Finding 5: parse workload controllers
 		if workloadKinds[kind] {

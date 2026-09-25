@@ -23,11 +23,13 @@ kube-chainsaw --from-cluster [OPTIONS]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--from-cluster` | Fetch RBAC resources from a live cluster via kubectl | `false` |
+| `--from-cluster` | Fetch RBAC resources, workloads, and NetworkPolicies from a live cluster via kubectl | `false` |
 | `--namespace NS` | Namespace to scan (used with `--from-cluster`, defaults to all namespaces) | `""` |
 | `--kubeconfig PATH` | Path to kubeconfig file (used with `--from-cluster`) | `""` |
 | `--exclude-dirs DIRS` | Comma-separated directory names to skip | `""` |
 | `--no-default-excludes` | Disable default exclusions (.git, vendor, node_modules, bin) | `false` |
+
+Live-cluster scans require list permission for every requested resource, including `networking.k8s.io/networkpolicies`.
 
 ### Output Options
 
@@ -188,6 +190,6 @@ Use `--no-default-excludes` to disable this behavior.
 
 ## Next Steps
 
-- [Detection Rules](rules.md): Full reference of all 15 detection rules
+- [Detection Rules](rules.md): Full reference of all 18 detection rules
 - [Output Formats](output-formats.md): SARIF, JSON, and console output examples
 - [Suppressions Guide](../guides/suppressions.md): Suppress false positives or accepted risks

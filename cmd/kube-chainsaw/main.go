@@ -66,7 +66,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&noDefaultExcludes, "no-default-excludes", false, "disable default directory exclusions (.git, vendor, node_modules, bin)")
 	rootCmd.Flags().StringVar(&suppressionsPath, "suppressions", "", "path to suppressions YAML file")
 	rootCmd.Flags().BoolVar(&quiet, "quiet", false, "suppress stdout output")
-	rootCmd.Flags().BoolVar(&fromCluster, "from-cluster", false, "fetch RBAC resources from a live cluster via kubectl")
+	rootCmd.Flags().BoolVar(&fromCluster, "from-cluster", false, "fetch security-relevant resources from a live cluster via kubectl")
 	rootCmd.Flags().StringVar(&namespace, "namespace", "", "namespace to scan (used with --from-cluster; defaults to all namespaces)")
 	rootCmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "path to kubeconfig file (used with --from-cluster)")
 }
@@ -112,9 +112,9 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Finding 15: warn when no RBAC resources are found
+	// Warn when no supported security-relevant resources are found.
 	if resources.IsEmpty() {
-		fmt.Fprintln(os.Stderr, "WARNING: no RBAC resources found in the scanned paths. Verify the paths contain Kubernetes RBAC manifests.")
+		fmt.Fprintln(os.Stderr, "WARNING: no supported security-relevant resources found in the scanned paths. Verify the paths contain Kubernetes RBAC or NetworkPolicy manifests.")
 	}
 
 	// Step 2: Analyze

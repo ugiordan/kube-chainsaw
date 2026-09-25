@@ -1,6 +1,6 @@
 # kube-chainsaw
 
-Graph-level RBAC analysis for Kubernetes manifests
+Graph-level RBAC and NetworkPolicy analysis for Kubernetes manifests
 
 [Get Started](getting-started/installation.md){ .md-button .md-button--primary }
 [GitHub](https://github.com/ugiordan/kube-chainsaw){ .md-button }
@@ -15,7 +15,7 @@ Graph-level RBAC analysis for Kubernetes manifests
 
 ## How It Works
 
-kube-chainsaw analyzes Kubernetes RBAC manifests by building a directed graph of permissions and traversing privilege escalation paths.
+kube-chainsaw analyzes Kubernetes RBAC and NetworkPolicy manifests by building a directed graph of permissions and checking network policy peer scope.
 
 ```mermaid
 graph LR
@@ -45,9 +45,9 @@ graph LR
 
 **Pipeline:**
 
-1. **Loader** parses YAML manifests from local files or fetches them from a live cluster via kubectl (ClusterRoles, Roles, Bindings, ServiceAccounts, Pods, Deployments, Jobs)
+1. **Loader** parses YAML manifests from local files or fetches them from a live cluster via kubectl (RBAC resources, workloads, and NetworkPolicies)
 2. **Graph Builder** maps SA -> Binding -> Role -> verb/resource permission chains
-3. **15 Detection Rules** (KC-001 through KC-015) identify dangerous patterns, wildcards, escalation paths
+3. **18 Detection Rules** (KC-001 through KC-018) identify dangerous patterns, wildcards, escalation paths, and broad NetworkPolicy peers
 4. **Severity Engine** adjusts severity based on binding scope (cluster-wide vs namespace-scoped vs unbound)
 
 ---
@@ -170,7 +170,7 @@ kube-chainsaw performs graph traversal on YAML manifests or live clusters to det
 
 ## What Gets Detected
 
-15 detection rules covering:
+18 detection rules covering:
 
 | Category | Rules | Examples |
 |----------|-------|---------|
@@ -180,6 +180,7 @@ kube-chainsaw performs graph traversal on YAML manifests or live clusters to det
 | **Escalation combos** | KC-011, KC-012 | create/patch on roles/bindings, workload creation |
 | **Privilege chains** | KC-013, KC-014 | cluster-admin pods, RoleBinding->ClusterRole |
 | **Aggregation** | KC-015 | aggregated ClusterRoles |
+| **NetworkPolicy** | KC-016 to KC-018 | NetworkPolicy access, broad ingress and egress peers |
 
 See [Detection Rules](reference/rules.md) for the full reference with YAML examples.
 

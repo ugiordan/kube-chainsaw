@@ -1,6 +1,6 @@
 # Detection Rules
 
-kube-chainsaw implements 15 static analysis rules to detect RBAC misconfigurations and privilege escalation paths.
+kube-chainsaw implements 18 static analysis rules to detect RBAC misconfigurations, privilege escalation paths, and broad NetworkPolicy peers.
 
 ---
 
@@ -376,6 +376,85 @@ aggregationRule:  # Triggers KC-015
 
 ---
 
+## KC-016: NetworkPolicy Access
+
+**Severity:** Varies by binding scope
+
+**Description:** Detects Roles and ClusterRoles with access to `networkpolicies` in the `networking.k8s.io` API group. Wildcard API groups also trigger this rule.
+
+**Impact:** A principal that can modify NetworkPolicies may disable network isolation or add paths to sensitive workloads. Read access can also expose the cluster's network segmentation design.
+
+**Example:**
+
+```yaml
+rules:
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]  # Triggers KC-016
+  verbs: ["get", "update"]
+```
+
+**Recommendation:** Restrict NetworkPolicy access to the small set of operators responsible for network isolation, and audit policy changes.
+
+---
+
+## KC-017: NetworkPolicy Allows Ingress from Broad Peers
+
+**Severity:** HIGH when the policy selects all pods in its namespace, otherwise WARNING
+
+**Description:** Detects ingress rules that omit peer selectors, use an empty peer list, select pods in all namespaces, or allow all IP addresses with `0.0.0.0/0` or `::/0`.
+
+**Impact:** Broad ingress peers can expose workloads to unintended namespaces, pods, or external sources. The finding is policy-level and does not claim that every selected port is reachable at runtime.
+
+**Example:**
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-ingress
+  namespace: production
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+  - {}  # Triggers KC-017
+```
+
+**Recommendation:** Use explicit `podSelector`, `namespaceSelector`, or `ipBlock` peers and limit ports to the traffic the workload requires.
+
+---
+
+## KC-018: NetworkPolicy Allows Egress to Broad Destinations
+
+**Severity:** HIGH when the policy selects all pods in its namespace, otherwise WARNING
+
+**Description:** Detects egress rules that omit destination selectors, use an empty destination list, select pods in all namespaces, or allow all IP addresses with `0.0.0.0/0` or `::/0`.
+
+**Impact:** Broad egress destinations let workloads contact unintended namespaces or external endpoints. The finding is policy-level and does not calculate effective connectivity across multiple additive policies or network plugins.
+
+**Example:**
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-public-egress
+  namespace: production
+spec:
+  podSelector:
+    matchLabels:
+      app: worker
+  policyTypes: [Egress]
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0  # Triggers KC-018
+```
+
+**Recommendation:** Restrict egress to explicit namespaces, pods, or approved CIDRs. Add exceptions deliberately and limit ports where possible.
+
+---
+
 ## Rule Severity Model
 
 Finding severity is dynamic, based on how the role is bound:
@@ -394,6 +473,7 @@ Special cases:
 - KC-013 (cluster-admin pod) is always CRITICAL
 - KC-014 (RoleBinding to ClusterRole) is always WARNING
 - KC-015 (aggregated ClusterRole) is always INFO
+- KC-017 and KC-018 are HIGH when the policy selects all pods in its namespace, otherwise WARNING
 
 ---
 

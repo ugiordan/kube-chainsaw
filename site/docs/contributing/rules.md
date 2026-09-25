@@ -8,7 +8,7 @@ Learn how to add new detection rules to kube-chainsaw.
 
 Detection rules are defined in `pkg/analyzer/rules.go`. Each rule has:
 
-- **Rule ID**: Unique identifier (KC-001 through KC-015)
+- **Rule ID**: Unique identifier (KC-001 through KC-018)
 - **Description**: Human-readable title
 - **Remediation**: How to fix the issue
 - **Detection logic**: Implemented in `pkg/analyzer/analyzer.go`
@@ -24,7 +24,7 @@ const (
 	RuleWildcardResources     = "KC-001"
 	RuleWildcardVerbs         = "KC-002"
 	// ... existing rules ...
-	RuleNewRule               = "KC-016"  // New rule
+	RuleNewRule               = "KC-019"  // New rule
 )
 
 // Add to ruleDescriptions
@@ -101,14 +101,14 @@ Add a new rule to detect `create` verb on `pods/eviction`:
 ```go
 const (
 	// ... existing rules ...
-	RulePodEviction = "KC-016"
+RulePodEviction = "KC-019"
 )
 
 var dangerousResources = map[string]string{
 	"*":                   RuleWildcardResources,
 	"secrets":             RuleSecretsAccess,
 	// ... existing rules ...
-	"pods/eviction":       RulePodEviction,  // New rule
+"pods/eviction":       RulePodEviction,  // New rule
 }
 
 var ruleDescriptions = map[string]string{
@@ -135,7 +135,7 @@ var coreGroupResources = map[string]bool{
 }
 ```
 
-That's it! The existing detection logic in `checkRules()` will automatically trigger KC-016 when it encounters the `pods/eviction` resource.
+That's it! The existing detection logic in `checkRules()` will automatically trigger KC-019 when it encounters the `pods/eviction` resource.
 
 ---
 
@@ -143,7 +143,7 @@ That's it! The existing detection logic in `checkRules()` will automatically tri
 
 Create a test fixture in `tests/fixtures/`:
 
-**tests/fixtures/kc016_pod_eviction.yaml:**
+**tests/fixtures/kc019_pod_eviction.yaml:**
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -162,27 +162,27 @@ Add a test in the appropriate test file:
 ```go
 func TestPodEvictionDetection(t *testing.T) {
 	opts := loader.DefaultOptions()
-	resources, err := loader.LoadManifests([]string{"../../tests/fixtures/kc016_pod_eviction.yaml"}, opts)
+	resources, err := loader.LoadManifests([]string{"../../tests/fixtures/kc019_pod_eviction.yaml"}, opts)
 	if err != nil {
 		t.Fatalf("Failed to load manifests: %v", err)
 	}
 
 	findings := analyzer.Analyze(resources)
 
-	// Filter to KC-016 findings
-	var kc016Findings []models.Finding
+// Filter to KC-019 findings
+	var kc019Findings []models.Finding
 	for _, f := range findings {
-		if f.RuleID == "KC-016" {
-			kc016Findings = append(kc016Findings, f)
+		if f.RuleID == "KC-019" {
+			kc019Findings = append(kc019Findings, f)
 		}
 	}
 
-	if len(kc016Findings) != 1 {
-		t.Errorf("Expected 1 KC-016 finding, got %d", len(kc016Findings))
+	if len(kc019Findings) != 1 {
+		t.Errorf("Expected 1 KC-019 finding, got %d", len(kc019Findings))
 	}
 
-	if kc016Findings[0].ResourceName != "pod-evictor" {
-		t.Errorf("Expected resource name 'pod-evictor', got %q", kc016Findings[0].ResourceName)
+	if kc019Findings[0].ResourceName != "pod-evictor" {
+		t.Errorf("Expected resource name 'pod-evictor', got %q", kc019Findings[0].ResourceName)
 	}
 }
 ```
@@ -198,7 +198,7 @@ go test ./pkg/analyzer -run TestPodEvictionDetection
 ## Rule ID Conventions
 
 - Core rules: `KC-001` through `KC-999`
-- Sequential numbering (next available: KC-016)
+- Sequential numbering (next available: KC-019)
 
 ---
 
@@ -220,7 +220,7 @@ Severity is computed dynamically based on binding scope (see `computeSeverity` i
 Add a rule description to `site/docs/reference/rules.md`:
 
 ```markdown
-## KC-016: Pod Eviction Permission
+## KC-019: Pod Eviction Permission
 
 **Severity:** Varies by binding scope
 

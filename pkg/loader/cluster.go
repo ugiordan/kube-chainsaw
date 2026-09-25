@@ -15,7 +15,7 @@ type ClusterOptions struct {
 	Kubeconfig string
 }
 
-// LoadFromCluster fetches RBAC resources and workloads from a live cluster
+// LoadFromCluster fetches RBAC resources, workloads, and NetworkPolicies from a live cluster
 // via kubectl and analyzes them using the same pipeline as static manifests.
 func LoadFromCluster(clusterOpts ClusterOptions) (*models.LoadedResources, error) {
 	kubectlPath, err := exec.LookPath("kubectl")
@@ -35,7 +35,7 @@ func LoadFromCluster(clusterOpts ClusterOptions) (*models.LoadedResources, error
 	}
 
 	// Namespaced resources respect the --namespace flag
-	if err := fetchResources(kubectlPath, "roles,rolebindings,serviceaccounts,deployments,daemonsets,statefulsets,jobs,cronjobs,replicasets,pods", clusterOpts.Namespace, clusterOpts.Kubeconfig, filepath.Join(tmpDir, "namespaced.yaml")); err != nil {
+	if err := fetchResources(kubectlPath, "roles,rolebindings,serviceaccounts,deployments,daemonsets,statefulsets,jobs,cronjobs,replicasets,pods,networkpolicies", clusterOpts.Namespace, clusterOpts.Kubeconfig, filepath.Join(tmpDir, "namespaced.yaml")); err != nil {
 		return nil, fmt.Errorf("fetching namespaced resources: %w", err)
 	}
 

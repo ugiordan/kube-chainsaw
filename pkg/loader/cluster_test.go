@@ -3,6 +3,7 @@ package loader
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -535,4 +536,35 @@ func TestJSONManifestSupported(t *testing.T) {
 
 	_, has := result.ClusterRoles["json-role"]
 	assert.True(t, has, "expected ClusterRole from JSON file")
+}
+
+func TestLoadFromClusterFetchesNetworkPolicies(t *testing.T) {
+	tmpDir := t.TempDir()
+	argsFile := filepath.Join(tmpDir, "kubectl-args")
+	script := `#!/bin/sh
+printf '%s\n' "$@" >> "$KUBECTL_ARGS_FILE"
+if [ "$2" = "clusterroles,clusterrolebindings" ]; then
+  printf '%s\n' 'apiVersion: v1' 'kind: List' 'items: []'
+  exit 0
+fi
+printf '%s\n' 'apiVersion: networking.k8s.io/v1' 'kind: NetworkPolicyList' 'items:' '- apiVersion: networking.k8s.io/v1' '  kind: NetworkPolicy' '  metadata:' '    name: default-deny' '    namespace: production' '  spec:' '    podSelector: {}' '    policyTypes:' '    - Ingress'
+`
+	kubectlPath := filepath.Join(tmpDir, "kubectl")
+	require.NoError(t, os.WriteFile(kubectlPath, []byte(script), 0o755))
+	t.Setenv("PATH", tmpDir)
+	t.Setenv("KUBECTL_ARGS_FILE", argsFile)
+
+	resources, err := LoadFromCluster(ClusterOptions{})
+	require.NoError(t, err)
+
+	policy, ok := resources.NetworkPolicies["production/default-deny"]
+	if assert.True(t, ok, "expected NetworkPolicy returned by kubectl to be loaded") {
+		assert.Equal(t, "default-deny", policy.Name)
+	}
+
+	args, err := os.ReadFile(argsFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(args), "networkpolicies")
+	assert.True(t, strings.Contains(string(args), "pods,networkpolicies"),
+		"expected NetworkPolicies in the namespaced kubectl resource request")
 }

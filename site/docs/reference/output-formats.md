@@ -74,7 +74,7 @@ kube-chainsaw k8s/ --format json --output results.json
 
 **Fields:**
 
-- `rule_id`: Rule identifier (KC-001 through KC-015)
+- `rule_id`: Rule identifier (current built-in rules are KC-001 through KC-018)
 - `severity`: CRITICAL, HIGH, WARNING, INFO
 - `title`: Short description of the rule
 - `file`: Path to the manifest file

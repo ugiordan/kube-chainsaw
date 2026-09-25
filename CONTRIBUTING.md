@@ -6,7 +6,7 @@ Contributions are welcome. Whether it's a bug report, a new detection rule, a do
 
 **Report a bug or suggest a feature**: Open an [issue](https://github.com/ugiordan/kube-chainsaw/issues). Describe what you expected, what happened, and ideally include a minimal YAML manifest that reproduces the problem.
 
-**Add a detection rule**: kube-chainsaw currently has 15 rules. If you've seen an RBAC misconfiguration pattern that isn't covered, propose it as an issue or submit a PR. See `pkg/analyzer/rules.go` for how existing rules work.
+**Add a detection rule**: kube-chainsaw currently has 18 rules. If you've seen an RBAC or NetworkPolicy misconfiguration pattern that isn't covered, propose it as an issue or submit a PR. See `pkg/analyzer/rules.go` for how existing rules work.
 
 **Fix a false positive**: If kube-chainsaw flags something that isn't actually a risk, open an issue with the YAML that triggers it and explain why it's safe. Even better, submit a PR with a test case.
 

@@ -1,6 +1,6 @@
 # Design Overview
 
-kube-chainsaw uses graph traversal and static analysis to detect RBAC misconfigurations and privilege escalation paths in Kubernetes manifests.
+kube-chainsaw uses graph traversal and static analysis to detect RBAC misconfigurations, privilege escalation paths, and broad NetworkPolicy peers in Kubernetes manifests.
 
 ---
 
@@ -26,7 +26,7 @@ graph TD
 - Parses YAML documents using sigs.k8s.io/yaml
 - Strips Go template expressions (`{{ }}`) to prevent parser errors
 - Enforces file size (10 MB) and document count (10,000) limits
-- Categorizes resources into ClusterRoles, Roles, RoleBindings, ClusterRoleBindings, ServiceAccounts, Pods, and Workloads
+- Categorizes resources into ClusterRoles, Roles, RoleBindings, ClusterRoleBindings, ServiceAccounts, Pods, Workloads, and NetworkPolicies
 
 **Supported workload kinds:**
 
@@ -39,11 +39,12 @@ graph TD
 
 ### 2. Analyzer (pkg/analyzer)
 
-Executes 15 detection rules against the loaded resources:
+Executes 18 detection rules against the loaded resources:
 
-- **Phase 1**: Analyze ClusterRoles for dangerous patterns (KC-001 through KC-012, KC-015)
-- **Phase 2**: Analyze Roles (namespace-scoped, severity capped at WARNING)
-- **Phase 3**: Privilege chain analysis (KC-013, KC-014)
+- **Phase 1**: Analyze ClusterRoles for dangerous patterns (KC-001 through KC-012, KC-015, KC-016)
+- **Phase 2**: Analyze Roles (namespace-scoped, severity capped at WARNING, including KC-016)
+- **Phase 3**: Analyze NetworkPolicies for broad ingress and egress peers (KC-017, KC-018)
+- **Phase 4**: Privilege chain analysis (KC-013, KC-014)
 
 Each rule outputs zero or more findings with severity, location, and remediation advice.
 
@@ -54,6 +55,11 @@ Each rule outputs zero or more findings with severity, location, and remediation
 - Namespace-scoped binding with wildcards → HIGH (capped at WARNING for namespace-scoped Roles)
 - Namespace-scoped binding without wildcards → WARNING
 - Unbound role → INFO
+
+NetworkPolicy findings are not binding-scope findings:
+
+- A policy selecting all pods in its namespace → HIGH
+- A policy selecting a narrower pod set → WARNING
 
 ### 3. Suppression (pkg/suppression)
 
@@ -97,7 +103,7 @@ This approach catches misconfigurations that static linters miss because they on
 
 1. **Static analysis only**: kube-chainsaw analyzes manifests, not live cluster state. Runtime RBAC changes (e.g., `kubectl create rolebinding`) are not detected.
 
-2. **No runtime context**: Cannot detect privilege escalation that depends on runtime conditions (e.g., specific pod configurations, environment variables).
+2. **No runtime context**: Cannot detect privilege escalation or effective network reachability that depends on runtime conditions (e.g., specific pod configurations, environment variables, network plugin behavior).
 
 3. **False negatives for dynamic resources**: Custom resources with RBAC implications (e.g., CRDs that create Roles) are not analyzed unless custom rules are defined.
 
@@ -125,8 +131,8 @@ kube-chainsaw is optimized for large repositories:
 
 - **10,000 manifests**: ~2 seconds on M1 MacBook Pro
 - **100,000 manifests**: ~20 seconds
-- **Graph construction**: O(n) where n = number of RBAC resources
-- **Rule execution**: O(n * r) where r = number of rules (15)
+- **Graph construction**: O(n) where n = number of loaded security resources
+- **Rule execution**: O(n * r) where r = number of rules (18)
 - **Memory usage**: <50 MB for typical repositories
 
 ---
@@ -147,6 +153,6 @@ kube-chainsaw is the only tool that combines static analysis with graph-based pr
 
 ## Next Steps
 
-- [Detection Rules](../reference/rules.md): Full reference of all 15 detection rules
+- [Detection Rules](../reference/rules.md): Full reference of all 18 detection rules
 - [Go API](../reference/go-api.md): Use kube-chainsaw as a library
 - [Contributing](../contributing/rules.md): Add new detection rules

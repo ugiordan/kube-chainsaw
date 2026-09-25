@@ -16,6 +16,11 @@ func testdataDir() string {
 	return dir
 }
 
+func examplesDir() string {
+	dir, _ := filepath.Abs("../../examples/networkpolicy")
+	return dir
+}
+
 func loadFixture(t *testing.T, subdir, filename string) *models.LoadedResources {
 	t.Helper()
 	file := filepath.Join(testdataDir(), subdir, filename)
@@ -50,10 +55,10 @@ func hasRule(findings []models.Finding, ruleID string) bool {
 
 func TestRuleDetection(t *testing.T) {
 	tests := []struct {
-		name     string
-		fixture  string
-		ruleID   string
-		minSev   models.Severity // minimum expected severity
+		name    string
+		fixture string
+		ruleID  string
+		minSev  models.Severity // minimum expected severity
 	}{
 		{
 			name:    "KC-001: Wildcard resources",
@@ -151,6 +156,24 @@ func TestRuleDetection(t *testing.T) {
 			ruleID:  "KC-015",
 			minSev:  models.SeverityInfo,
 		},
+		{
+			name:    "KC-016: NetworkPolicy access",
+			fixture: "networkpolicy-access.yaml",
+			ruleID:  RuleNetworkPolicyAccess,
+			minSev:  models.SeverityHigh,
+		},
+		{
+			name:    "KC-017: Broad ingress peer",
+			fixture: "networkpolicy-broad.yaml",
+			ruleID:  RuleNetworkPolicyIngress,
+			minSev:  models.SeverityWarning,
+		},
+		{
+			name:    "KC-018: Broad egress peer",
+			fixture: "networkpolicy-broad.yaml",
+			ruleID:  RuleNetworkPolicyEgress,
+			minSev:  models.SeverityWarning,
+		},
 	}
 
 	for _, tt := range tests {
@@ -178,6 +201,8 @@ func TestCleanFixturesProduceNoFindings(t *testing.T) {
 		"go-templates.yaml",
 		"minimal-role.yaml",
 		"multi-doc-mixed.yaml",
+		"networkpolicy-default-deny.yaml",
+		"networkpolicy-restricted.yaml",
 		"sa-no-bindings.yaml",
 	}
 
@@ -200,6 +225,19 @@ func TestCleanFixturesProduceNoFindings(t *testing.T) {
 				"clean fixture %s should produce no dangerous findings, got: %v", filename, dangerous)
 		})
 	}
+}
+
+func TestNetworkPolicyExamples(t *testing.T) {
+	secure, err := loader.LoadManifests([]string{filepath.Join(examplesDir(), "secure.yaml")}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, Analyze(secure), "secure NetworkPolicy example should produce no findings")
+
+	broad, err := loader.LoadManifests([]string{filepath.Join(examplesDir(), "broad.yaml")}, nil)
+	require.NoError(t, err)
+	findings := Analyze(broad)
+	assert.Len(t, findingsWithRule(findings, RuleNetworkPolicyAccess), 1)
+	assert.Len(t, findingsWithRule(findings, RuleNetworkPolicyIngress), 1)
+	assert.Len(t, findingsWithRule(findings, RuleNetworkPolicyEgress), 1)
 }
 
 func TestReadonlyClusterRoleNoFindings(t *testing.T) {
@@ -358,6 +396,383 @@ func TestAggregatedRole(t *testing.T) {
 	for _, f := range matched {
 		assert.Equal(t, models.SeverityInfo, f.Severity)
 	}
+}
+
+func TestNetworkPolicyFindings(t *testing.T) {
+	resources := loadFixture(t, "dangerous", "networkpolicy-broad.yaml")
+	findings := Analyze(resources)
+
+	ingress := findingsWithRule(findings, RuleNetworkPolicyIngress)
+	require.Len(t, ingress, 1)
+	assert.Equal(t, models.SeverityHigh, ingress[0].Severity,
+		"a policy selecting all pods should produce a HIGH ingress finding")
+	assert.Equal(t, "NetworkPolicy", ingress[0].ResourceKind)
+	assert.Equal(t, "allow-all-ingress", ingress[0].ResourceName)
+	assert.Equal(t, "production", ingress[0].ResourceNamespace)
+	assert.Contains(t, ingress[0].Description, "all sources")
+
+	egress := findingsWithRule(findings, RuleNetworkPolicyEgress)
+	require.Len(t, egress, 2)
+	byName := map[string]string{}
+	for _, finding := range egress {
+		byName[finding.ResourceName] = finding.Description
+	}
+	assert.Contains(t, byName["allow-cross-namespace-egress"], "all namespaces")
+	assert.Contains(t, byName["allow-public-egress"], "all IP addresses")
+}
+
+func TestNetworkPolicyDirectionRespectsPolicyTypes(t *testing.T) {
+	resources := models.NewLoadedResources()
+	resources.NetworkPolicies["default/egress-only"] = &models.NetworkPolicyData{
+		Name:      "egress-only",
+		Namespace: "default",
+		File:      "networkpolicy.yaml",
+		Doc: map[string]interface{}{
+			"spec": map[string]interface{}{
+				"podSelector": map[string]interface{}{},
+				"policyTypes": []interface{}{"Egress"},
+				"ingress":     []interface{}{map[string]interface{}{}},
+			},
+		},
+	}
+
+	findings := Analyze(resources)
+	assert.Empty(t, findingsWithRule(findings, RuleNetworkPolicyIngress),
+		"a direction excluded by policyTypes must not produce a finding")
+}
+
+func TestNetworkPolicyDefaultingAndSelectorShapes(t *testing.T) {
+	tests := []struct {
+		name         string
+		spec         map[string]interface{}
+		ingressCount int
+		egressCount  int
+		expectedSev  models.Severity
+	}{
+		{
+			name: "omitted policyTypes and podSelector",
+			spec: map[string]interface{}{
+				"ingress": []interface{}{map[string]interface{}{}},
+				"egress":  []interface{}{map[string]interface{}{}},
+			},
+			ingressCount: 1,
+			egressCount:  1,
+			expectedSev:  models.SeverityHigh,
+		},
+		{
+			name: "empty policyTypes and null podSelector",
+			spec: map[string]interface{}{
+				"podSelector": nil,
+				"policyTypes": []interface{}{},
+				"ingress":     []interface{}{map[string]interface{}{}},
+				"egress":      []interface{}{map[string]interface{}{}},
+			},
+			ingressCount: 1,
+			egressCount:  1,
+			expectedSev:  models.SeverityHigh,
+		},
+		{
+			name: "empty matchLabels selector",
+			spec: map[string]interface{}{
+				"podSelector": map[string]interface{}{
+					"matchLabels": map[string]interface{}{},
+				},
+				"policyTypes": []interface{}{"Ingress"},
+				"ingress":     []interface{}{map[string]interface{}{}},
+			},
+			ingressCount: 1,
+			expectedSev:  models.SeverityHigh,
+		},
+		{
+			name: "empty matchExpressions selector",
+			spec: map[string]interface{}{
+				"podSelector": map[string]interface{}{
+					"matchExpressions": []interface{}{},
+				},
+				"policyTypes": []interface{}{"Ingress"},
+				"ingress":     []interface{}{map[string]interface{}{}},
+			},
+			ingressCount: 1,
+			expectedSev:  models.SeverityHigh,
+		},
+		{
+			name: "nonempty matchExpressions selector",
+			spec: map[string]interface{}{
+				"podSelector": map[string]interface{}{
+					"matchExpressions": []interface{}{
+						map[string]interface{}{
+							"key":      "tier",
+							"operator": "In",
+							"values":   []interface{}{"backend"},
+						},
+					},
+				},
+				"policyTypes": []interface{}{"Ingress"},
+				"ingress":     []interface{}{map[string]interface{}{}},
+			},
+			ingressCount: 1,
+			expectedSev:  models.SeverityWarning,
+		},
+		{
+			name: "egress defaults without policyTypes",
+			spec: map[string]interface{}{
+				"podSelector": map[string]interface{}{
+					"matchLabels": map[string]interface{}{"app": "worker"},
+				},
+				"egress": []interface{}{map[string]interface{}{}},
+			},
+			egressCount: 1,
+			expectedSev: models.SeverityWarning,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resources := models.NewLoadedResources()
+			resources.NetworkPolicies["default/test-policy"] = &models.NetworkPolicyData{
+				Name:      "test-policy",
+				Namespace: "default",
+				File:      "networkpolicy.yaml",
+				Doc:       map[string]interface{}{"spec": tt.spec},
+			}
+
+			findings := Analyze(resources)
+			ingress := findingsWithRule(findings, RuleNetworkPolicyIngress)
+			egress := findingsWithRule(findings, RuleNetworkPolicyEgress)
+			assert.Len(t, ingress, tt.ingressCount)
+			assert.Len(t, egress, tt.egressCount)
+			for _, finding := range append(ingress, egress...) {
+				assert.Equal(t, tt.expectedSev, finding.Severity)
+			}
+		})
+	}
+}
+
+func TestNetworkPolicyEmptyEgressDoesNotEnableEgressByDefault(t *testing.T) {
+	resources := models.NewLoadedResources()
+	resources.NetworkPolicies["default/default-deny"] = &models.NetworkPolicyData{
+		Name:      "default-deny",
+		Namespace: "default",
+		File:      "networkpolicy.yaml",
+		Doc: map[string]interface{}{
+			"spec": map[string]interface{}{
+				"podSelector": map[string]interface{}{},
+				"egress":      []interface{}{},
+			},
+		},
+	}
+
+	findings := Analyze(resources)
+	assert.Empty(t, findingsWithRule(findings, RuleNetworkPolicyEgress))
+	assert.True(t, networkPolicyDirectionEnabled(map[string]interface{}{}, "Ingress"))
+	assert.False(t, networkPolicyDirectionEnabled(map[string]interface{}{
+		"egress": []interface{}{},
+	}, "Egress"))
+}
+
+func TestNetworkPolicyIPBlockEdgeCases(t *testing.T) {
+	tests := []struct {
+		name       string
+		ipBlock    map[string]interface{}
+		matchesAll bool
+	}{
+		{
+			name:       "IPv4 all addresses",
+			ipBlock:    map[string]interface{}{"cidr": "0.0.0.0/0"},
+			matchesAll: true,
+		},
+		{
+			name:       "IPv6 all addresses",
+			ipBlock:    map[string]interface{}{"cidr": "::/0"},
+			matchesAll: true,
+		},
+		{
+			name:       "all addresses with empty except",
+			ipBlock:    map[string]interface{}{"cidr": "0.0.0.0/0", "except": []interface{}{}},
+			matchesAll: true,
+		},
+		{
+			name:       "all addresses with null except",
+			ipBlock:    map[string]interface{}{"cidr": "::/0", "except": nil},
+			matchesAll: true,
+		},
+		{
+			name:       "all addresses with exception",
+			ipBlock:    map[string]interface{}{"cidr": "0.0.0.0/0", "except": []interface{}{"10.0.0.0/8"}},
+			matchesAll: false,
+		},
+		{
+			name:       "bounded CIDR",
+			ipBlock:    map[string]interface{}{"cidr": "10.0.0.0/8"},
+			matchesAll: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.matchesAll, ipBlockMatchesAllIPs(tt.ipBlock))
+		})
+	}
+}
+
+func TestNetworkPolicyIPBlockAnalysisHonorsExceptions(t *testing.T) {
+	resources := models.NewLoadedResources()
+	resources.NetworkPolicies["default/excepted-egress"] = &models.NetworkPolicyData{
+		Name:      "excepted-egress",
+		Namespace: "default",
+		File:      "networkpolicy.yaml",
+		Doc: map[string]interface{}{
+			"spec": map[string]interface{}{
+				"podSelector": map[string]interface{}{
+					"matchLabels": map[string]interface{}{"app": "worker"},
+				},
+				"policyTypes": []interface{}{"Egress"},
+				"egress": []interface{}{
+					map[string]interface{}{
+						"to": []interface{}{
+							map[string]interface{}{
+								"ipBlock": map[string]interface{}{
+									"cidr":   "0.0.0.0/0",
+									"except": []interface{}{"10.0.0.0/8"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	findings := Analyze(resources)
+	assert.Empty(t, findingsWithRule(findings, RuleNetworkPolicyEgress))
+}
+
+func TestNetworkPolicyPeerListEdgeCases(t *testing.T) {
+	tests := []struct {
+		name       string
+		rule       map[string]interface{}
+		matchesAll bool
+	}{
+		{
+			name:       "omitted peer list",
+			rule:       map[string]interface{}{},
+			matchesAll: true,
+		},
+		{
+			name:       "null peer list",
+			rule:       map[string]interface{}{"from": nil},
+			matchesAll: true,
+		},
+		{
+			name:       "empty peer list",
+			rule:       map[string]interface{}{"from": []interface{}{}},
+			matchesAll: true,
+		},
+		{
+			name: "restricted peer",
+			rule: map[string]interface{}{
+				"from": []interface{}{
+					map[string]interface{}{
+						"namespaceSelector": map[string]interface{}{
+							"matchLabels": map[string]interface{}{"team": "backend"},
+						},
+					},
+				},
+			},
+			matchesAll: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rules := []interface{}{tt.rule}
+			reasons := broadNetworkPolicyPeers(rules, "from", "sources")
+			assert.Equal(t, tt.matchesAll, len(reasons) > 0)
+		})
+	}
+}
+
+func TestMalformedNetworkPolicyDoesNotPanic(t *testing.T) {
+	resources := models.NewLoadedResources()
+	resources.NetworkPolicies["default/malformed"] = &models.NetworkPolicyData{
+		Name:      "malformed",
+		Namespace: "default",
+		File:      "malformed.yaml",
+		Doc: map[string]interface{}{
+			"spec": map[string]interface{}{
+				"podSelector": "not-a-selector",
+				"policyTypes": "not-a-list",
+				"ingress":     "not-a-list",
+				"egress": []interface{}{
+					map[string]interface{}{
+						"to": []interface{}{"not-a-peer", 42},
+					},
+				},
+			},
+		},
+	}
+
+	assert.NotPanics(t, func() {
+		_ = Analyze(resources)
+	})
+}
+
+func TestNetworkPolicyAccessUsesAPIGroup(t *testing.T) {
+	resources := models.NewLoadedResources()
+	resources.ClusterRoles["custom-networkpolicy-role"] = &models.ClusterRoleData{
+		Rules: []map[string]interface{}{
+			{
+				"apiGroups": []interface{}{"example.com"},
+				"resources": []interface{}{"networkpolicies"},
+				"verbs":     []interface{}{"get"},
+			},
+		},
+		File: "custom.yaml",
+	}
+	resources.ClusterRoles["wildcard-networkpolicy-role"] = &models.ClusterRoleData{
+		Rules: []map[string]interface{}{
+			{
+				"apiGroups": []interface{}{"*"},
+				"resources": []interface{}{"networkpolicies"},
+				"verbs":     []interface{}{"get"},
+			},
+		},
+		File: "wildcard.yaml",
+	}
+
+	findings := Analyze(resources)
+	matched := findingsWithRule(findings, RuleNetworkPolicyAccess)
+	require.Len(t, matched, 1)
+	assert.Equal(t, "wildcard-networkpolicy-role", matched[0].ResourceName)
+}
+
+func TestNetworkPolicyAccessRoleSeverity(t *testing.T) {
+	resources := models.NewLoadedResources()
+	resources.Roles["security/networkpolicy-reader"] = &models.RoleData{
+		Rules: []map[string]interface{}{
+			{
+				"apiGroups": []interface{}{"networking.k8s.io"},
+				"resources": []interface{}{"networkpolicies"},
+				"verbs":     []interface{}{"get"},
+			},
+		},
+		Namespace: "security",
+		File:      "role.yaml",
+	}
+	resources.RoleBindings = append(resources.RoleBindings, &models.BindingData{
+		Name:      "networkpolicy-reader-binding",
+		Namespace: "security",
+		RoleRef: map[string]interface{}{
+			"kind": "Role",
+			"name": "networkpolicy-reader",
+		},
+		File: "binding.yaml",
+	})
+
+	findings := Analyze(resources)
+	matched := findingsWithRule(findings, RuleNetworkPolicyAccess)
+	require.Len(t, matched, 1)
+	assert.Equal(t, models.SeverityWarning, matched[0].Severity)
 }
 
 func TestWildcardVerbsSeverityCritical(t *testing.T) {
@@ -559,7 +974,7 @@ func TestMultiplePodSubresourcesDeduplicated(t *testing.T) {
 func TestKnownRuleIDs(t *testing.T) {
 	ids := KnownRuleIDs()
 
-	assert.Len(t, ids, 15, "expected 15 known rule IDs")
+	assert.Len(t, ids, 18, "expected 18 known rule IDs")
 
 	for _, id := range ids {
 		assert.Len(t, id, 6, "rule ID %q should be 6 chars", id)
@@ -574,6 +989,7 @@ func TestKnownRuleIDs(t *testing.T) {
 		RulePodsExecAttach, RuleNodesAccess, RulePVAccess,
 		RuleRBACModification, RuleEscalationBindings, RuleEscalationPodCreation,
 		RuleClusterAdminPod, RuleRoleBindingClusterRef, RuleAggregatedClusterRole,
+		RuleNetworkPolicyAccess, RuleNetworkPolicyIngress, RuleNetworkPolicyEgress,
 	}
 	for _, exp := range expected {
 		assert.Contains(t, ids, exp, "KnownRuleIDs() should contain %s", exp)

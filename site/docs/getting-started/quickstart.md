@@ -137,7 +137,7 @@ Instead of scanning local files, point kube-chainsaw at a running cluster:
 $ kube-chainsaw --from-cluster --fail-on HIGH
 ```
 
-This fetches all RBAC resources and workloads via kubectl and runs the same analysis. Scope to a specific namespace with `--namespace`:
+This fetches RBAC resources, workloads, and NetworkPolicies via kubectl and runs the same analysis. Scope to a specific namespace with `--namespace`:
 
 ```bash
 $ kube-chainsaw --from-cluster --namespace my-app --fail-on HIGH
@@ -235,7 +235,7 @@ Each finding includes:
 
 | Field | Description |
 |-------|-------------|
-| **Rule ID** | Detection rule (KC-001 through KC-015). See [Detection Rules](../reference/rules.md). |
+| **Rule ID** | Detection rule (KC-001 through KC-018). See [Detection Rules](../reference/rules.md). |
 | **Severity** | CRITICAL, HIGH, WARNING, or INFO |
 | **File** | Path to the manifest file |
 | **Resource** | Kubernetes resource kind and name |

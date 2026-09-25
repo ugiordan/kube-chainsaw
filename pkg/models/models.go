@@ -137,15 +137,24 @@ type WorkloadData struct {
 	Doc                map[string]interface{}
 }
 
-// LoadedResources is the aggregate of all parsed RBAC-relevant resources.
+// NetworkPolicyData holds a parsed NetworkPolicy resource.
+type NetworkPolicyData struct {
+	Name      string
+	Namespace string
+	File      string
+	Doc       map[string]interface{}
+}
+
+// LoadedResources is the aggregate of all parsed security-relevant resources.
 type LoadedResources struct {
 	ClusterRoles        map[string]*ClusterRoleData
-	Roles               map[string]*RoleData         // key: "namespace/name"
+	Roles               map[string]*RoleData // key: "namespace/name"
 	ClusterRoleBindings []*BindingData
 	RoleBindings        []*BindingData
-	ServiceAccounts     map[string]*SAData           // key: "namespace/name"
-	Pods                map[string]*PodData          // key: "namespace/name"
-	Workloads           map[string]*WorkloadData     // key: "kind/namespace/name"
+	ServiceAccounts     map[string]*SAData            // key: "namespace/name"
+	Pods                map[string]*PodData           // key: "namespace/name"
+	Workloads           map[string]*WorkloadData      // key: "kind/namespace/name"
+	NetworkPolicies     map[string]*NetworkPolicyData // key: "namespace/name"
 }
 
 // NewLoadedResources creates an initialized LoadedResources with empty maps/slices.
@@ -158,10 +167,11 @@ func NewLoadedResources() *LoadedResources {
 		ServiceAccounts:     make(map[string]*SAData),
 		Pods:                make(map[string]*PodData),
 		Workloads:           make(map[string]*WorkloadData),
+		NetworkPolicies:     make(map[string]*NetworkPolicyData),
 	}
 }
 
-// IsEmpty returns true if no RBAC resources were loaded.
+// IsEmpty returns true if no supported security-relevant resources were loaded.
 // Pods and Workloads are included since they reference ServiceAccounts that participate in privilege chains.
 func (r *LoadedResources) IsEmpty() bool {
 	return len(r.ClusterRoles) == 0 &&
@@ -170,5 +180,6 @@ func (r *LoadedResources) IsEmpty() bool {
 		len(r.RoleBindings) == 0 &&
 		len(r.ServiceAccounts) == 0 &&
 		len(r.Pods) == 0 &&
-		len(r.Workloads) == 0
+		len(r.Workloads) == 0 &&
+		len(r.NetworkPolicies) == 0
 }

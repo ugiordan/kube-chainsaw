@@ -1,5 +1,5 @@
 name: kube-chainsaw
-description: Graph-level RBAC privilege chain analysis for Kubernetes manifests
+description: Graph-level RBAC and NetworkPolicy security analysis for Kubernetes manifests
 inputs:
   paths:
     description: Space-separated directories to scan

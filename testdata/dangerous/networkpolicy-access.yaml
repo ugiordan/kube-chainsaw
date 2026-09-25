@@ -1,0 +1,26 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: networkpolicy-manager
+rules:
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - get
+  - list
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: networkpolicy-manager-binding
+subjects:
+- kind: ServiceAccount
+  name: networkpolicy-manager
+  namespace: security
+roleRef:
+  kind: ClusterRole
+  name: networkpolicy-manager
+  apiGroup: rbac.authorization.k8s.io

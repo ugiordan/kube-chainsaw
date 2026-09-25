@@ -40,6 +40,9 @@ func TestLoadDangerousDir(t *testing.T) {
 	// Should have Pods (cluster-admin-pod, rolebinding-to-clusterrole-pod)
 	assert.NotEmpty(t, result.Pods, "expected Pods to be loaded")
 
+	// Should have NetworkPolicies
+	assert.NotEmpty(t, result.NetworkPolicies, "expected NetworkPolicies to be loaded")
+
 	// Verify specific resources
 	_, hasWildcardVerbs := result.ClusterRoles["wildcard-verbs-role"]
 	assert.True(t, hasWildcardVerbs, "expected wildcard-verbs-role")
@@ -68,6 +71,9 @@ func TestLoadCleanDir(t *testing.T) {
 	// multi-doc file should extract the Role but skip ConfigMap and Service
 	_, hasMultiDocRole := result.Roles["default/multi-doc-role"]
 	assert.True(t, hasMultiDocRole, "expected multi-doc-role from multi-doc file")
+
+	_, hasDefaultDeny := result.NetworkPolicies["production/default-deny"]
+	assert.True(t, hasDefaultDeny, "expected default-deny NetworkPolicy from clean fixtures")
 }
 
 func TestLoadMalformedDir(t *testing.T) {
@@ -187,6 +193,93 @@ func TestLoadSingleFile(t *testing.T) {
 
 	_, has := result.ClusterRoles["wildcard-verbs-role"]
 	assert.True(t, has, "expected wildcard-verbs-role from single file")
+}
+
+func TestLoadNetworkPolicyList(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifest := `apiVersion: networking.k8s.io/v1
+kind: NetworkPolicyList
+items:
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: frontend
+    namespace: web
+  spec:
+    podSelector:
+      matchLabels:
+        app: frontend
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: backend
+    namespace: web
+  spec:
+    podSelector: {}
+    policyTypes:
+    - Ingress
+- apiVersion: example.com/v1
+  kind: NetworkPolicy
+  metadata:
+    name: custom-network-policy
+    namespace: web
+  spec:
+    podSelector: {}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "networkpolicies.yaml"), []byte(manifest), 0o644))
+
+	result, err := LoadManifests([]string{tmpDir}, nil)
+	require.NoError(t, err)
+
+	frontend, hasFrontend := result.NetworkPolicies["web/frontend"]
+	if assert.True(t, hasFrontend, "expected frontend NetworkPolicy from list") {
+		assert.Equal(t, "frontend", frontend.Name)
+		assert.Equal(t, "web", frontend.Namespace)
+		assert.NotNil(t, frontend.Doc["spec"])
+	}
+	_, hasBackend := result.NetworkPolicies["web/backend"]
+	assert.True(t, hasBackend, "expected backend NetworkPolicy from list")
+	_, hasCustom := result.NetworkPolicies["web/custom-network-policy"]
+	assert.False(t, hasCustom, "expected custom API group NetworkPolicy to be ignored")
+}
+
+func TestLoadDuplicateNetworkPolicyUsesLastDocument(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifest := `apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: duplicate
+  namespace: web
+spec:
+  podSelector:
+    matchLabels:
+      version: first
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: duplicate
+  namespace: web
+spec:
+  podSelector:
+    matchLabels:
+      version: last
+`
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "duplicates.yaml"), []byte(manifest), 0o644))
+
+	result, err := LoadManifests([]string{tmpDir}, nil)
+	require.NoError(t, err)
+
+	policy, ok := result.NetworkPolicies["web/duplicate"]
+	if assert.True(t, ok, "expected duplicate NetworkPolicy to be loaded") {
+		spec, ok := policy.Doc["spec"].(map[string]interface{})
+		require.True(t, ok)
+		selector, ok := spec["podSelector"].(map[string]interface{})
+		require.True(t, ok)
+		labels, ok := selector["matchLabels"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "last", labels["version"])
+	}
 }
 
 func TestCustomExcludes(t *testing.T) {

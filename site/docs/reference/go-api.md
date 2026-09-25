@@ -73,7 +73,7 @@ func main() {
 
 	// Check what was loaded
 	if resources.IsEmpty() {
-		// No RBAC resources found
+		// No supported security-relevant resources found
 	}
 }
 ```
@@ -263,6 +263,13 @@ sev, err := models.ParseSeverity("HIGH")
 ### Loaded Resources
 
 ```go
+type NetworkPolicyData struct {
+	Name      string
+	Namespace string
+	File      string
+	Doc       map[string]interface{}
+}
+
 type LoadedResources struct {
 	ClusterRoles        map[string]*ClusterRoleData
 	Roles               map[string]*RoleData  // key: "namespace/name"
@@ -271,6 +278,7 @@ type LoadedResources struct {
 	ServiceAccounts     map[string]*SAData  // key: "namespace/name"
 	Pods                map[string]*PodData  // key: "namespace/name"
 	Workloads           map[string]*WorkloadData  // key: "kind/namespace/name"
+	NetworkPolicies     map[string]*NetworkPolicyData  // key: "namespace/name"
 }
 ```
 

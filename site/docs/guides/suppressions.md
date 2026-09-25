@@ -77,7 +77,7 @@ kube-chainsaw validates suppressions at load time:
 
 - `rule_id` must be non-empty
 - `resource_name` must be non-empty
-- If `rule_id` doesn't match the known pattern (KC-001 through KC-015), a warning is printed to stderr
+- If `rule_id` doesn't match the `KC-NNN` pattern, a warning is printed to stderr
 
 Unrecognized `rule_id` values (e.g., typos or custom rules) generate warnings but don't fail the scan.
 

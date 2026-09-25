@@ -23,6 +23,9 @@ const (
 	RuleClusterAdminPod       = "KC-013"
 	RuleRoleBindingClusterRef = "KC-014"
 	RuleAggregatedClusterRole = "KC-015"
+	RuleNetworkPolicyAccess   = "KC-016"
+	RuleNetworkPolicyIngress  = "KC-017"
+	RuleNetworkPolicyEgress   = "KC-018"
 )
 
 // KnownRuleIDs returns all valid KC rule IDs. Used by external integrations
@@ -46,30 +49,31 @@ var dangerousVerbs = map[string]string{
 
 // dangerousResources maps resource names to the rule they trigger.
 var dangerousResources = map[string]string{
-	"*":                      RuleWildcardResources,
-	"secrets":                RuleSecretsAccess,
-	"pods/exec":              RulePodsExecAttach,
-	"pods/attach":            RulePodsExecAttach,
-	"pods/log":               RulePodsExecAttach,
+	"*":                        RuleWildcardResources,
+	"secrets":                  RuleSecretsAccess,
+	"pods/exec":                RulePodsExecAttach,
+	"pods/attach":              RulePodsExecAttach,
+	"pods/log":                 RulePodsExecAttach,
 	"pods/ephemeralcontainers": RulePodsExecAttach,
-	"nodes":                  RuleNodesAccess,
-	"nodes/proxy":            RuleNodesAccess,
-	"persistentvolumes":      RulePVAccess,
-	"clusterroles":           RuleRBACModification,
-	"clusterrolebindings":    RuleRBACModification,
+	"nodes":                    RuleNodesAccess,
+	"nodes/proxy":              RuleNodesAccess,
+	"persistentvolumes":        RulePVAccess,
+	"clusterroles":             RuleRBACModification,
+	"clusterrolebindings":      RuleRBACModification,
+	"networkpolicies":          RuleNetworkPolicyAccess,
 }
 
 // coreGroupResources are resources that should only trigger when apiGroups
 // contains "" (core group) or "*".
 var coreGroupResources = map[string]bool{
-	"secrets":                true,
-	"pods/exec":              true,
-	"pods/attach":            true,
-	"pods/log":               true,
+	"secrets":                  true,
+	"pods/exec":                true,
+	"pods/attach":              true,
+	"pods/log":                 true,
 	"pods/ephemeralcontainers": true,
-	"nodes":                  true,
-	"nodes/proxy":            true,
-	"persistentvolumes":      true,
+	"nodes":                    true,
+	"nodes/proxy":              true,
+	"persistentvolumes":        true,
 }
 
 // rbacGroupResources are resources that should only trigger when apiGroups
@@ -79,6 +83,12 @@ var rbacGroupResources = map[string]bool{
 	"clusterrolebindings": true,
 	"roles":               true,
 	"rolebindings":        true,
+}
+
+// networkingGroupResources are resources that should only trigger when
+// apiGroups contains "networking.k8s.io" or "*".
+var networkingGroupResources = map[string]bool{
+	"networkpolicies": true,
 }
 
 // escalationBindingResources triggers KC-011 when combined with create/patch/update.
@@ -125,6 +135,9 @@ var ruleDescriptions = map[string]string{
 	RuleClusterAdminPod:       "Pod running with cluster-admin privileges",
 	RuleRoleBindingClusterRef: "RoleBinding referencing ClusterRole",
 	RuleAggregatedClusterRole: "Aggregated ClusterRole detected",
+	RuleNetworkPolicyAccess:   "NetworkPolicy access",
+	RuleNetworkPolicyIngress:  "Broad NetworkPolicy ingress peer",
+	RuleNetworkPolicyEgress:   "Broad NetworkPolicy egress peer",
 }
 
 // ruleRemediations provides remediation guidance for each rule.
@@ -144,6 +157,9 @@ var ruleRemediations = map[string]string{
 	RuleClusterAdminPod:       "Never use cluster-admin for pod service accounts; create a scoped role",
 	RuleRoleBindingClusterRef: "Use a Role instead of ClusterRole when granting namespace-scoped access",
 	RuleAggregatedClusterRole: "Review aggregation labels to ensure only intended roles are included",
+	RuleNetworkPolicyAccess:   "Restrict NetworkPolicy access to the operators that manage network isolation",
+	RuleNetworkPolicyIngress:  "Restrict ingress peers to the namespaces, pods, or CIDRs that require access",
+	RuleNetworkPolicyEgress:   "Restrict egress destinations to the namespaces, pods, or CIDRs that require access",
 }
 
 // computeSeverity determines severity based on binding scope and whether wildcards are involved.
@@ -187,6 +203,9 @@ func apiGroupMatchesResource(apiGroups []string, resource string) bool {
 			return true
 		}
 		if rbacGroupResources[resource] && group == "rbac.authorization.k8s.io" {
+			return true
+		}
+		if networkingGroupResources[resource] && group == "networking.k8s.io" {
 			return true
 		}
 	}

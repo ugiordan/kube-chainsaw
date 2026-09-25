@@ -181,6 +181,6 @@ Report false positives at [GitHub Issues](https://github.com/ugiordan/kube-chain
 
 ## Next Steps
 
-- [Detection Rules Reference](../reference/rules.md): Full descriptions of all 15 rules
+- [Detection Rules Reference](../reference/rules.md): Full descriptions of all 18 rules
 - [Suppressions](suppressions.md): Suppress false positives or accepted risks
 - [CLI Commands](../reference/cli.md): Control severity thresholds and output formats

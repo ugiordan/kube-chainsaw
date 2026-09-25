@@ -143,6 +143,17 @@ func TestNewLoadedResourcesInitialized(t *testing.T) {
 	assert.NotNil(t, r.ServiceAccounts)
 	assert.NotNil(t, r.Pods)
 	assert.NotNil(t, r.Workloads)
+	assert.NotNil(t, r.NetworkPolicies)
 	assert.Empty(t, r.ClusterRoleBindings)
 	assert.Empty(t, r.RoleBindings)
+}
+
+func TestLoadedResourcesIsEmptyWithNetworkPolicy(t *testing.T) {
+	r := NewLoadedResources()
+	r.NetworkPolicies["default/default-deny"] = &NetworkPolicyData{
+		Name:      "default-deny",
+		Namespace: "default",
+	}
+
+	assert.False(t, r.IsEmpty())
 }
