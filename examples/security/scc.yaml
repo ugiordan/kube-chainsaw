@@ -1,0 +1,40 @@
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: application-privileged
+allowPrivilegedContainer: true
+allowHostNetwork: true
+allowedCapabilities:
+- '*'
+volumes:
+- '*'
+runAsUser:
+  type: RunAsAny
+groups:
+- system:authenticated
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: application-scc-user
+rules:
+- apiGroups:
+  - security.openshift.io
+  resources:
+  - securitycontextconstraints
+  resourceNames:
+  - application-privileged
+  verbs:
+  - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: application-scc-user-binding
+subjects:
+- kind: Group
+  name: system:authenticated
+roleRef:
+  kind: ClusterRole
+  name: application-scc-user
+  apiGroup: rbac.authorization.k8s.io

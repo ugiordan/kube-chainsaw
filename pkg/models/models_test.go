@@ -144,6 +144,11 @@ func TestNewLoadedResourcesInitialized(t *testing.T) {
 	assert.NotNil(t, r.Pods)
 	assert.NotNil(t, r.Workloads)
 	assert.NotNil(t, r.NetworkPolicies)
+	assert.NotNil(t, r.SecurityContextConstraints)
+	assert.NotNil(t, r.Services)
+	assert.NotNil(t, r.Ingresses)
+	assert.NotNil(t, r.Routes)
+	assert.NotNil(t, r.Secrets)
 	assert.Empty(t, r.ClusterRoleBindings)
 	assert.Empty(t, r.RoleBindings)
 }
@@ -153,6 +158,15 @@ func TestLoadedResourcesIsEmptyWithNetworkPolicy(t *testing.T) {
 	r.NetworkPolicies["default/default-deny"] = &NetworkPolicyData{
 		Name:      "default-deny",
 		Namespace: "default",
+	}
+
+	assert.False(t, r.IsEmpty())
+}
+
+func TestLoadedResourcesIsEmptyWithSecurityContextConstraints(t *testing.T) {
+	r := NewLoadedResources()
+	r.SecurityContextConstraints["restricted"] = &SecurityContextConstraintsData{
+		Name: "restricted",
 	}
 
 	assert.False(t, r.IsEmpty())

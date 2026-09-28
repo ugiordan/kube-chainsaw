@@ -1,0 +1,43 @@
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: broad-workload
+allowPrivilegedContainer: true
+allowHostNetwork: true
+allowHostDirVolumePlugin: true
+allowedCapabilities:
+- '*'
+volumes:
+- '*'
+runAsUser:
+  type: RunAsAny
+users: []
+groups:
+- system:authenticated
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: scc-user
+rules:
+- apiGroups:
+  - security.openshift.io
+  resources:
+  - securitycontextconstraints
+  resourceNames:
+  - broad-workload
+  verbs:
+  - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: scc-user-binding
+subjects:
+- kind: ServiceAccount
+  name: workload-manager
+  namespace: production
+roleRef:
+  kind: ClusterRole
+  name: scc-user
+  apiGroup: rbac.authorization.k8s.io

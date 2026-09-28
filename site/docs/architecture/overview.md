@@ -26,7 +26,7 @@ graph TD
 - Parses YAML documents using sigs.k8s.io/yaml
 - Strips Go template expressions (`{{ }}`) to prevent parser errors
 - Enforces file size (10 MB) and document count (10,000) limits
-- Categorizes resources into ClusterRoles, Roles, RoleBindings, ClusterRoleBindings, ServiceAccounts, Pods, Workloads, and NetworkPolicies
+- Categorizes resources into ClusterRoles, Roles, RoleBindings, ClusterRoleBindings, ServiceAccounts, Pods, Workloads, Services, Ingresses, Routes, Secrets, NetworkPolicies, and OpenShift SecurityContextConstraints
 
 **Supported workload kinds:**
 
@@ -36,15 +36,20 @@ graph TD
 - Job
 - CronJob
 - ReplicaSet
+- ReplicationController
+- OpenShift DeploymentConfig
 
 ### 2. Analyzer (pkg/analyzer)
 
-Executes 18 detection rules against the loaded resources:
+Executes 31 detection rules against the loaded resources:
 
 - **Phase 1**: Analyze ClusterRoles for dangerous patterns (KC-001 through KC-012, KC-015, KC-016)
 - **Phase 2**: Analyze Roles (namespace-scoped, severity capped at WARNING, including KC-016)
 - **Phase 3**: Analyze NetworkPolicies for broad ingress and egress peers (KC-017, KC-018)
-- **Phase 4**: Privilege chain analysis (KC-013, KC-014)
+- **Phase 4**: Analyze workload security contexts (KC-019 through KC-022)
+- **Phase 5**: Analyze OpenShift SecurityContextConstraints (KC-023, KC-024)
+- **Phase 6**: Analyze external exposure and static Secrets (KC-025 through KC-029)
+- **Phase 7**: Privilege chain analysis (KC-013, KC-014)
 
 Each rule outputs zero or more findings with severity, location, and remediation advice.
 
@@ -56,10 +61,12 @@ Each rule outputs zero or more findings with severity, location, and remediation
 - Namespace-scoped binding without wildcards → WARNING
 - Unbound role → INFO
 
-NetworkPolicy findings are not binding-scope findings:
+NetworkPolicy and workload security findings are not binding-scope findings:
 
 - A policy selecting all pods in its namespace → HIGH
 - A policy selecting a narrower pod set → WARNING
+- Explicit privileged or host-integrated workload settings → HIGH
+- A narrower hostPath or capability finding → WARNING, unless it targets a sensitive host path or capability
 
 ### 3. Suppression (pkg/suppression)
 
@@ -132,7 +139,7 @@ kube-chainsaw is optimized for large repositories:
 - **10,000 manifests**: ~2 seconds on M1 MacBook Pro
 - **100,000 manifests**: ~20 seconds
 - **Graph construction**: O(n) where n = number of loaded security resources
-- **Rule execution**: O(n * r) where r = number of rules (18)
+- **Rule execution**: O(n * r) where r = number of rules (31)
 - **Memory usage**: <50 MB for typical repositories
 
 ---
@@ -153,6 +160,6 @@ kube-chainsaw is the only tool that combines static analysis with graph-based pr
 
 ## Next Steps
 
-- [Detection Rules](../reference/rules.md): Full reference of all 18 detection rules
+- [Detection Rules](../reference/rules.md): Full reference of all 31 detection rules
 - [Go API](../reference/go-api.md): Use kube-chainsaw as a library
 - [Contributing](../contributing/rules.md): Add new detection rules

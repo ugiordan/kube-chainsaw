@@ -8,7 +8,7 @@ Learn how to add new detection rules to kube-chainsaw.
 
 Detection rules are defined in `pkg/analyzer/rules.go`. Each rule has:
 
-- **Rule ID**: Unique identifier (KC-001 through KC-018)
+- **Rule ID**: Unique identifier (KC-001 through KC-031)
 - **Description**: Human-readable title
 - **Remediation**: How to fix the issue
 - **Detection logic**: Implemented in `pkg/analyzer/analyzer.go`
@@ -24,7 +24,7 @@ const (
 	RuleWildcardResources     = "KC-001"
 	RuleWildcardVerbs         = "KC-002"
 	// ... existing rules ...
-	RuleNewRule               = "KC-019"  // New rule
+	RuleNewRule               = "KC-032"  // New rule
 )
 
 // Add to ruleDescriptions
@@ -198,7 +198,7 @@ go test ./pkg/analyzer -run TestPodEvictionDetection
 ## Rule ID Conventions
 
 - Core rules: `KC-001` through `KC-999`
-- Sequential numbering (next available: KC-019)
+- Sequential numbering (next available: KC-032)
 
 ---
 

@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: privileged-worker
+  namespace: production
+spec:
+  selector:
+    matchLabels:
+      app: privileged-worker
+  template:
+    metadata:
+      labels:
+        app: privileged-worker
+    spec:
+      hostNetwork: true
+      containers:
+      - name: worker
+        image: busybox
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+            - SYS_ADMIN
+        volumeMounts:
+        - name: host-runtime
+          mountPath: /run
+      volumes:
+      - name: host-runtime
+        hostPath:
+          path: /var/run
+          type: Directory

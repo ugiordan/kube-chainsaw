@@ -145,29 +145,78 @@ type NetworkPolicyData struct {
 	Doc       map[string]interface{}
 }
 
+// SecurityContextConstraintsData holds a parsed OpenShift SecurityContextConstraints resource.
+type SecurityContextConstraintsData struct {
+	Name string
+	File string
+	Doc  map[string]interface{}
+}
+
+// ServiceData holds a parsed Kubernetes Service resource.
+type ServiceData struct {
+	Name      string
+	Namespace string
+	File      string
+	Doc       map[string]interface{}
+}
+
+// IngressData holds a parsed Kubernetes Ingress resource.
+type IngressData struct {
+	Name      string
+	Namespace string
+	File      string
+	Doc       map[string]interface{}
+}
+
+// RouteData holds a parsed OpenShift Route resource.
+type RouteData struct {
+	Name      string
+	Namespace string
+	File      string
+	Doc       map[string]interface{}
+}
+
+// SecretData holds a parsed static Kubernetes Secret resource.
+type SecretData struct {
+	Name      string
+	Namespace string
+	File      string
+	Doc       map[string]interface{}
+}
+
 // LoadedResources is the aggregate of all parsed security-relevant resources.
 type LoadedResources struct {
-	ClusterRoles        map[string]*ClusterRoleData
-	Roles               map[string]*RoleData // key: "namespace/name"
-	ClusterRoleBindings []*BindingData
-	RoleBindings        []*BindingData
-	ServiceAccounts     map[string]*SAData            // key: "namespace/name"
-	Pods                map[string]*PodData           // key: "namespace/name"
-	Workloads           map[string]*WorkloadData      // key: "kind/namespace/name"
-	NetworkPolicies     map[string]*NetworkPolicyData // key: "namespace/name"
+	ClusterRoles               map[string]*ClusterRoleData
+	Roles                      map[string]*RoleData // key: "namespace/name"
+	ClusterRoleBindings        []*BindingData
+	RoleBindings               []*BindingData
+	ServiceAccounts            map[string]*SAData                         // key: "namespace/name"
+	Pods                       map[string]*PodData                        // key: "namespace/name"
+	Workloads                  map[string]*WorkloadData                   // key: "kind/namespace/name"
+	NetworkPolicies            map[string]*NetworkPolicyData              // key: "namespace/name"
+	SecurityContextConstraints map[string]*SecurityContextConstraintsData // key: name
+	Services                   map[string]*ServiceData                    // key: "namespace/name"
+	Ingresses                  map[string]*IngressData                    // key: "namespace/name"
+	Routes                     map[string]*RouteData                      // key: "namespace/name"
+	Secrets                    map[string]*SecretData                     // key: "namespace/name"
 }
 
 // NewLoadedResources creates an initialized LoadedResources with empty maps/slices.
 func NewLoadedResources() *LoadedResources {
 	return &LoadedResources{
-		ClusterRoles:        make(map[string]*ClusterRoleData),
-		Roles:               make(map[string]*RoleData),
-		ClusterRoleBindings: nil,
-		RoleBindings:        nil,
-		ServiceAccounts:     make(map[string]*SAData),
-		Pods:                make(map[string]*PodData),
-		Workloads:           make(map[string]*WorkloadData),
-		NetworkPolicies:     make(map[string]*NetworkPolicyData),
+		ClusterRoles:               make(map[string]*ClusterRoleData),
+		Roles:                      make(map[string]*RoleData),
+		ClusterRoleBindings:        nil,
+		RoleBindings:               nil,
+		ServiceAccounts:            make(map[string]*SAData),
+		Pods:                       make(map[string]*PodData),
+		Workloads:                  make(map[string]*WorkloadData),
+		NetworkPolicies:            make(map[string]*NetworkPolicyData),
+		SecurityContextConstraints: make(map[string]*SecurityContextConstraintsData),
+		Services:                   make(map[string]*ServiceData),
+		Ingresses:                  make(map[string]*IngressData),
+		Routes:                     make(map[string]*RouteData),
+		Secrets:                    make(map[string]*SecretData),
 	}
 }
 
@@ -181,5 +230,10 @@ func (r *LoadedResources) IsEmpty() bool {
 		len(r.ServiceAccounts) == 0 &&
 		len(r.Pods) == 0 &&
 		len(r.Workloads) == 0 &&
-		len(r.NetworkPolicies) == 0
+		len(r.NetworkPolicies) == 0 &&
+		len(r.SecurityContextConstraints) == 0 &&
+		len(r.Services) == 0 &&
+		len(r.Ingresses) == 0 &&
+		len(r.Routes) == 0 &&
+		len(r.Secrets) == 0
 }

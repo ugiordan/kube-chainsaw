@@ -8,24 +8,37 @@ import (
 
 // Rule IDs and their descriptions.
 const (
-	RuleWildcardResources     = "KC-001"
-	RuleWildcardVerbs         = "KC-002"
-	RuleEscalateVerb          = "KC-003"
-	RuleImpersonateVerb       = "KC-004"
-	RuleBindVerb              = "KC-005"
-	RuleSecretsAccess         = "KC-006"
-	RulePodsExecAttach        = "KC-007"
-	RuleNodesAccess           = "KC-008"
-	RulePVAccess              = "KC-009"
-	RuleRBACModification      = "KC-010"
-	RuleEscalationBindings    = "KC-011"
-	RuleEscalationPodCreation = "KC-012"
-	RuleClusterAdminPod       = "KC-013"
-	RuleRoleBindingClusterRef = "KC-014"
-	RuleAggregatedClusterRole = "KC-015"
-	RuleNetworkPolicyAccess   = "KC-016"
-	RuleNetworkPolicyIngress  = "KC-017"
-	RuleNetworkPolicyEgress   = "KC-018"
+	RuleWildcardResources         = "KC-001"
+	RuleWildcardVerbs             = "KC-002"
+	RuleEscalateVerb              = "KC-003"
+	RuleImpersonateVerb           = "KC-004"
+	RuleBindVerb                  = "KC-005"
+	RuleSecretsAccess             = "KC-006"
+	RulePodsExecAttach            = "KC-007"
+	RuleNodesAccess               = "KC-008"
+	RulePVAccess                  = "KC-009"
+	RuleRBACModification          = "KC-010"
+	RuleEscalationBindings        = "KC-011"
+	RuleEscalationPodCreation     = "KC-012"
+	RuleClusterAdminPod           = "KC-013"
+	RuleRoleBindingClusterRef     = "KC-014"
+	RuleAggregatedClusterRole     = "KC-015"
+	RuleNetworkPolicyAccess       = "KC-016"
+	RuleNetworkPolicyIngress      = "KC-017"
+	RuleNetworkPolicyEgress       = "KC-018"
+	RulePrivilegedContainer       = "KC-019"
+	RuleHostNamespace             = "KC-020"
+	RuleHostPath                  = "KC-021"
+	RuleDangerousCapabilities     = "KC-022"
+	RuleSCCUse                    = "KC-023"
+	RulePermissiveSCC             = "KC-024"
+	RuleExternalService           = "KC-025"
+	RuleUnencryptedRoute          = "KC-026"
+	RuleBroadExternalRoute        = "KC-027"
+	RuleCredentialSecret          = "KC-028"
+	RuleServiceAccountTokenSecret = "KC-029"
+	RuleServiceAccountTokenAccess = "KC-030"
+	RuleCSRApproval               = "KC-031"
 )
 
 // KnownRuleIDs returns all valid KC rule IDs. Used by external integrations
@@ -55,6 +68,7 @@ var dangerousResources = map[string]string{
 	"pods/attach":              RulePodsExecAttach,
 	"pods/log":                 RulePodsExecAttach,
 	"pods/ephemeralcontainers": RulePodsExecAttach,
+	"pods/portforward":         RulePodsExecAttach,
 	"nodes":                    RuleNodesAccess,
 	"nodes/proxy":              RuleNodesAccess,
 	"persistentvolumes":        RulePVAccess,
@@ -71,6 +85,7 @@ var coreGroupResources = map[string]bool{
 	"pods/attach":              true,
 	"pods/log":                 true,
 	"pods/ephemeralcontainers": true,
+	"pods/portforward":         true,
 	"nodes":                    true,
 	"nodes/proxy":              true,
 	"persistentvolumes":        true,
@@ -102,13 +117,15 @@ var escalationBindingResources = map[string]bool{
 // escalationWorkloadResources triggers KC-012 when combined with create.
 // Finding 10: expanded to include workload controllers.
 var escalationWorkloadResources = map[string]bool{
-	"pods":         true,
-	"deployments":  true,
-	"daemonsets":   true,
-	"statefulsets": true,
-	"jobs":         true,
-	"cronjobs":     true,
-	"replicasets":  true,
+	"pods":                   true,
+	"deployments":            true,
+	"daemonsets":             true,
+	"statefulsets":           true,
+	"jobs":                   true,
+	"cronjobs":               true,
+	"replicasets":            true,
+	"replicationcontrollers": true,
+	"deploymentconfigs":      true,
 }
 
 // escalationMutationVerbs are verbs that count as creating/modifying.
@@ -120,46 +137,72 @@ var escalationMutationVerbs = map[string]bool{
 
 // ruleDescriptions provides the title for each rule ID.
 var ruleDescriptions = map[string]string{
-	RuleWildcardResources:     "Wildcard resource access",
-	RuleWildcardVerbs:         "Wildcard verb access",
-	RuleEscalateVerb:          "Escalate verb permission",
-	RuleImpersonateVerb:       "Impersonate verb permission",
-	RuleBindVerb:              "Bind verb permission",
-	RuleSecretsAccess:         "Secrets access",
-	RulePodsExecAttach:        "Dangerous pod subresource access",
-	RuleNodesAccess:           "Node-level access",
-	RulePVAccess:              "PersistentVolume access",
-	RuleRBACModification:      "RBAC modification capability",
-	RuleEscalationBindings:    "Privilege escalation via role/binding modification",
-	RuleEscalationPodCreation: "Privilege escalation via workload creation",
-	RuleClusterAdminPod:       "Pod running with cluster-admin privileges",
-	RuleRoleBindingClusterRef: "RoleBinding referencing ClusterRole",
-	RuleAggregatedClusterRole: "Aggregated ClusterRole detected",
-	RuleNetworkPolicyAccess:   "NetworkPolicy access",
-	RuleNetworkPolicyIngress:  "Broad NetworkPolicy ingress peer",
-	RuleNetworkPolicyEgress:   "Broad NetworkPolicy egress peer",
+	RuleWildcardResources:         "Wildcard resource access",
+	RuleWildcardVerbs:             "Wildcard verb access",
+	RuleEscalateVerb:              "Escalate verb permission",
+	RuleImpersonateVerb:           "Impersonate verb permission",
+	RuleBindVerb:                  "Bind verb permission",
+	RuleSecretsAccess:             "Secrets access",
+	RulePodsExecAttach:            "Dangerous pod subresource access",
+	RuleNodesAccess:               "Node-level access",
+	RulePVAccess:                  "PersistentVolume access",
+	RuleRBACModification:          "RBAC modification capability",
+	RuleEscalationBindings:        "Privilege escalation via role/binding modification",
+	RuleEscalationPodCreation:     "Privilege escalation via workload creation",
+	RuleClusterAdminPod:           "Pod running with cluster-admin privileges",
+	RuleRoleBindingClusterRef:     "RoleBinding referencing ClusterRole",
+	RuleAggregatedClusterRole:     "Aggregated ClusterRole detected",
+	RuleNetworkPolicyAccess:       "NetworkPolicy access",
+	RuleNetworkPolicyIngress:      "Broad NetworkPolicy ingress peer",
+	RuleNetworkPolicyEgress:       "Broad NetworkPolicy egress peer",
+	RulePrivilegedContainer:       "Privileged container requested",
+	RuleHostNamespace:             "Host namespace access requested",
+	RuleHostPath:                  "HostPath volume requested",
+	RuleDangerousCapabilities:     "Dangerous Linux capability requested",
+	RuleSCCUse:                    "OpenShift SecurityContextConstraints use permission",
+	RulePermissiveSCC:             "Permissive OpenShift SecurityContextConstraints assignment",
+	RuleExternalService:           "External Service exposure",
+	RuleUnencryptedRoute:          "Unencrypted external route",
+	RuleBroadExternalRoute:        "Broad external route",
+	RuleCredentialSecret:          "Credential material in Secret manifest",
+	RuleServiceAccountTokenSecret: "Long-lived ServiceAccount token Secret",
+	RuleServiceAccountTokenAccess: "ServiceAccount token minting permission",
+	RuleCSRApproval:               "CertificateSigningRequest approval or signing permission",
 }
 
 // ruleRemediations provides remediation guidance for each rule.
 var ruleRemediations = map[string]string{
-	RuleWildcardResources:     "Replace wildcard (*) resources with explicit resource names",
-	RuleWildcardVerbs:         "Replace wildcard (*) verbs with specific verbs needed",
-	RuleEscalateVerb:          "Remove the 'escalate' verb unless absolutely required for RBAC management",
-	RuleImpersonateVerb:       "Remove the 'impersonate' verb unless required for proxy or delegation",
-	RuleBindVerb:              "Remove the 'bind' verb unless required for RBAC management",
-	RuleSecretsAccess:         "Restrict secrets access to specific namespaces and only the verbs needed",
-	RulePodsExecAttach:        "Restrict pod subresource access (exec, attach, log, ephemeralcontainers) to specific namespaces and add audit logging",
-	RuleNodesAccess:           "Limit node and node/proxy access to monitoring verbs (get, list, watch)",
-	RulePVAccess:              "Limit PV access to read-only verbs unless storage management is required",
-	RuleRBACModification:      "Limit RBAC modification to dedicated admin roles with proper audit",
-	RuleEscalationBindings:    "Restrict ability to create/modify roles and bindings to admin users only",
-	RuleEscalationPodCreation: "Restrict workload creation to CI/CD pipelines and use PodSecurity admission",
-	RuleClusterAdminPod:       "Never use cluster-admin for pod service accounts; create a scoped role",
-	RuleRoleBindingClusterRef: "Use a Role instead of ClusterRole when granting namespace-scoped access",
-	RuleAggregatedClusterRole: "Review aggregation labels to ensure only intended roles are included",
-	RuleNetworkPolicyAccess:   "Restrict NetworkPolicy access to the operators that manage network isolation",
-	RuleNetworkPolicyIngress:  "Restrict ingress peers to the namespaces, pods, or CIDRs that require access",
-	RuleNetworkPolicyEgress:   "Restrict egress destinations to the namespaces, pods, or CIDRs that require access",
+	RuleWildcardResources:         "Replace wildcard (*) resources with explicit resource names",
+	RuleWildcardVerbs:             "Replace wildcard (*) verbs with specific verbs needed",
+	RuleEscalateVerb:              "Remove the 'escalate' verb unless absolutely required for RBAC management",
+	RuleImpersonateVerb:           "Remove the 'impersonate' verb unless required for proxy or delegation",
+	RuleBindVerb:                  "Remove the 'bind' verb unless required for RBAC management",
+	RuleSecretsAccess:             "Restrict secrets access to specific namespaces and only the verbs needed",
+	RulePodsExecAttach:            "Restrict pod subresource access (exec, attach, log, ephemeralcontainers, portforward) to specific namespaces and add audit logging",
+	RuleNodesAccess:               "Limit node and node/proxy access to monitoring verbs (get, list, watch)",
+	RulePVAccess:                  "Limit PV access to read-only verbs unless storage management is required",
+	RuleRBACModification:          "Limit RBAC modification to dedicated admin roles with proper audit",
+	RuleEscalationBindings:        "Restrict ability to create/modify roles and bindings to admin users only",
+	RuleEscalationPodCreation:     "Restrict workload creation to CI/CD pipelines and use PodSecurity admission",
+	RuleClusterAdminPod:           "Never use cluster-admin for pod service accounts; create a scoped role",
+	RuleRoleBindingClusterRef:     "Use a Role instead of ClusterRole when granting namespace-scoped access",
+	RuleAggregatedClusterRole:     "Review aggregation labels to ensure only intended roles are included",
+	RuleNetworkPolicyAccess:       "Restrict NetworkPolicy access to the operators that manage network isolation",
+	RuleNetworkPolicyIngress:      "Restrict ingress peers to the namespaces, pods, or CIDRs that require access",
+	RuleNetworkPolicyEgress:       "Restrict egress destinations to the namespaces, pods, or CIDRs that require access",
+	RulePrivilegedContainer:       "Remove privileged mode and use the narrowest container securityContext required",
+	RuleHostNamespace:             "Disable hostNetwork, hostPID, and hostIPC unless the workload is trusted infrastructure",
+	RuleHostPath:                  "Replace hostPath volumes with scoped Kubernetes volumes or restrict the host path",
+	RuleDangerousCapabilities:     "Drop unnecessary Linux capabilities and avoid broad capability sets",
+	RuleSCCUse:                    "Restrict SCC use to named constraints and trusted administrative identities",
+	RulePermissiveSCC:             "Avoid assigning permissive SCCs broadly; use a least-privilege SCC for the workload",
+	RuleExternalService:           "Restrict externally reachable Services and document intentional exposure",
+	RuleUnencryptedRoute:          "Configure TLS termination and reject or redirect plaintext traffic",
+	RuleBroadExternalRoute:        "Use explicit hosts instead of wildcard or catch-all routing where possible",
+	RuleCredentialSecret:          "Keep credentials out of plain manifests and use an external secret manager",
+	RuleServiceAccountTokenSecret: "Use projected short-lived ServiceAccount tokens instead of token Secrets",
+	RuleServiceAccountTokenAccess: "Restrict serviceaccounts/token access to tightly controlled automation",
+	RuleCSRApproval:               "Restrict CSR approval and signing permissions to the cluster certificate controllers",
 }
 
 // computeSeverity determines severity based on binding scope and whether wildcards are involved.
@@ -213,6 +256,24 @@ func apiGroupMatchesResource(apiGroups []string, resource string) bool {
 	return false
 }
 
+func apiGroupMatchesSCC(apiGroups []string) bool {
+	for _, group := range apiGroups {
+		if group == "*" || group == "security.openshift.io" {
+			return true
+		}
+	}
+	return false
+}
+
+func apiGroupMatchesCSR(apiGroups []string) bool {
+	for _, group := range apiGroups {
+		if group == "*" || group == "certificates.k8s.io" {
+			return true
+		}
+	}
+	return false
+}
+
 // apiGroupMatchesEscalationBinding checks if apiGroups are appropriate for
 // RBAC escalation binding resources.
 func apiGroupMatchesEscalationBinding(apiGroups []string) bool {
@@ -234,8 +295,8 @@ func apiGroupMatchesEscalationWorkload(apiGroups []string, resource string) bool
 		if group == "*" {
 			return true
 		}
-		// pods are in the core group
-		if resource == "pods" && group == "" {
+		// pods and replicationcontrollers are in the core group
+		if (resource == "pods" || resource == "replicationcontrollers") && group == "" {
 			return true
 		}
 		// workload controllers are in apps/batch groups
@@ -243,6 +304,9 @@ func apiGroupMatchesEscalationWorkload(apiGroups []string, resource string) bool
 			return true
 		}
 		if (resource == "jobs" || resource == "cronjobs") && (group == "batch") {
+			return true
+		}
+		if resource == "deploymentconfigs" && group == "apps.openshift.io" {
 			return true
 		}
 	}

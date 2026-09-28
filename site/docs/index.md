@@ -15,7 +15,7 @@ Graph-level RBAC and NetworkPolicy analysis for Kubernetes manifests
 
 ## How It Works
 
-kube-chainsaw analyzes Kubernetes RBAC and NetworkPolicy manifests by building a directed graph of permissions and checking network policy peer scope.
+kube-chainsaw analyzes Kubernetes RBAC, workload security contexts, NetworkPolicy manifests, and OpenShift SCC assignments by building a directed graph of permissions and checking declared security posture.
 
 ```mermaid
 graph LR
@@ -26,7 +26,7 @@ graph LR
 
     subgraph "kube-chainsaw"
         B[Loader] --> C[Graph Builder]
-        C --> D[15 Detection Rules]
+        C --> D[31 Detection Rules]
         D --> E[Severity Engine]
     end
 
@@ -45,10 +45,10 @@ graph LR
 
 **Pipeline:**
 
-1. **Loader** parses YAML manifests from local files or fetches them from a live cluster via kubectl (RBAC resources, workloads, and NetworkPolicies)
+1. **Loader** parses YAML manifests from local files or fetches them from a live cluster via kubectl (RBAC resources, workloads, Services, Ingresses, NetworkPolicies, and optional OpenShift resources)
 2. **Graph Builder** maps SA -> Binding -> Role -> verb/resource permission chains
-3. **18 Detection Rules** (KC-001 through KC-018) identify dangerous patterns, wildcards, escalation paths, and broad NetworkPolicy peers
-4. **Severity Engine** adjusts severity based on binding scope (cluster-wide vs namespace-scoped vs unbound)
+3. **31 Detection Rules** (KC-001 through KC-031) identify dangerous patterns, wildcards, escalation paths, broad NetworkPolicy peers, workload security issues, exposure, Secret, and OpenShift SCC risks
+4. **Severity Engine** adjusts RBAC severity by binding scope and assigns explicit posture severity to workloads, NetworkPolicies, and SCCs
 
 ---
 
@@ -170,7 +170,7 @@ kube-chainsaw performs graph traversal on YAML manifests or live clusters to det
 
 ## What Gets Detected
 
-18 detection rules covering:
+31 detection rules covering:
 
 | Category | Rules | Examples |
 |----------|-------|---------|
@@ -181,6 +181,10 @@ kube-chainsaw performs graph traversal on YAML manifests or live clusters to det
 | **Privilege chains** | KC-013, KC-014 | cluster-admin pods, RoleBinding->ClusterRole |
 | **Aggregation** | KC-015 | aggregated ClusterRoles |
 | **NetworkPolicy** | KC-016 to KC-018 | NetworkPolicy access, broad ingress and egress peers |
+| **Workload security** | KC-019 to KC-022 | privileged containers, host namespaces, hostPath, dangerous capabilities |
+| **OpenShift SCC** | KC-023 to KC-024 | SCC use permissions and permissive assignments |
+| **Exposure** | KC-025 to KC-027 | external Services, unencrypted routes, broad hosts |
+| **Secrets and certificate access** | KC-028 to KC-031 | credential manifests, token Secrets, token minting, CSR approval |
 
 See [Detection Rules](reference/rules.md) for the full reference with YAML examples.
 

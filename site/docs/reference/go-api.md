@@ -270,6 +270,40 @@ type NetworkPolicyData struct {
 	Doc       map[string]interface{}
 }
 
+type SecurityContextConstraintsData struct {
+	Name string
+	File string
+	Doc  map[string]interface{}
+}
+
+type ServiceData struct {
+	Name      string
+	Namespace string
+	File      string
+	Doc       map[string]interface{}
+}
+
+type IngressData struct {
+	Name      string
+	Namespace string
+	File      string
+	Doc       map[string]interface{}
+}
+
+type RouteData struct {
+	Name      string
+	Namespace string
+	File      string
+	Doc       map[string]interface{}
+}
+
+type SecretData struct {
+	Name      string
+	Namespace string
+	File      string
+	Doc       map[string]interface{}
+}
+
 type LoadedResources struct {
 	ClusterRoles        map[string]*ClusterRoleData
 	Roles               map[string]*RoleData  // key: "namespace/name"
@@ -279,6 +313,11 @@ type LoadedResources struct {
 	Pods                map[string]*PodData  // key: "namespace/name"
 	Workloads           map[string]*WorkloadData  // key: "kind/namespace/name"
 	NetworkPolicies     map[string]*NetworkPolicyData  // key: "namespace/name"
+	SecurityContextConstraints map[string]*SecurityContextConstraintsData  // key: "name"
+	Services             map[string]*ServiceData  // key: "namespace/name"
+	Ingresses            map[string]*IngressData  // key: "namespace/name"
+	Routes               map[string]*RouteData  // key: "namespace/name"
+	Secrets              map[string]*SecretData  // key: "namespace/name"
 }
 ```
 

@@ -4,9 +4,9 @@
 
 # kube-chainsaw
 
-Graph-level RBAC and NetworkPolicy security analysis for Kubernetes manifests.
+Graph-level RBAC, workload security, NetworkPolicy, and OpenShift SCC analysis for Kubernetes manifests.
 
-kube-chainsaw builds permission graphs from YAML manifests or live clusters (ServiceAccount -> RoleBinding -> Role -> verb/resource), and analyzes NetworkPolicy peer scope. It detects indirect privilege escalation paths and broad network access patterns that per-object linters like kube-linter cannot catch. It runs 18 detection rules across RBAC, privilege-chain, aggregation, and NetworkPolicy categories.
+kube-chainsaw builds permission graphs from YAML manifests or live clusters (ServiceAccount -> RoleBinding -> Role -> verb/resource), and analyzes workload security contexts, NetworkPolicy peer scope, external exposure, Secret manifests, and OpenShift SCC assignments. It detects indirect privilege escalation paths and dangerous runtime security settings that per-object linters like kube-linter cannot catch. It runs 31 detection rules across RBAC, workload security, network policy, exposure, Secret, and OpenShift categories.
 
 **[Documentation](https://ugiordan.github.io/kube-chainsaw/)** | **[Detection Rules Reference](https://ugiordan.github.io/kube-chainsaw/reference/rules/)** | **[Blog Post](https://developers.redhat.com/articles/2026/07/07/why-your-rbac-linter-misses-privilege-escalation-chains-and-how-fix-it)**
 
@@ -48,6 +48,8 @@ kube-chainsaw config/ deploy/ --fail-on HIGH
 ```
 
 Runnable NetworkPolicy examples are in [`examples/networkpolicy/`](examples/networkpolicy/).
+Runnable workload and OpenShift examples are in [`examples/security/`](examples/security/).
+Runnable exposure examples are in [`examples/exposure/`](examples/exposure/).
 
 Scan a live cluster:
 ```bash
@@ -80,12 +82,16 @@ Total: 2 findings [2 HIGH]
 
 ## What It Detects
 
-18 rules across four categories:
+31 rules across eight categories:
 
 - **Risky permissions**: wildcard verbs/resources, dangerous verbs (escalate, impersonate, bind), sensitive resource access (Secrets, pods/exec, nodes), RBAC self-modification, and NetworkPolicy access
 - **Privilege chains**: workloads whose ServiceAccount chains up to cluster-admin, RoleBindings that reference ClusterRoles (scope mismatch)
 - **Aggregated ClusterRoles**: label-selector-based role composition where effective permissions can't be fully determined statically
 - **NetworkPolicy**: policies that allow ingress from broad peers or egress to broad destinations
+- **Workload security**: privileged containers, host namespaces, hostPath volumes, and dangerous capabilities
+- **OpenShift SCC**: SCC use permissions and permissive SCC assignments
+- **Exposure**: external Services, unencrypted routes, and broad hosts
+- **Secrets**: credential-bearing manifests and long-lived ServiceAccount token Secrets
 
 Severity adjusts based on binding scope: cluster-wide bindings are HIGH/CRITICAL, namespace-scoped are WARNING, unbound roles are INFO.
 NetworkPolicy findings are HIGH when they select every pod in a namespace and WARNING for narrower pod selectors.

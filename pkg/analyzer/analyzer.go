@@ -35,10 +35,22 @@ func Analyze(resources *models.LoadedResources) []models.Finding {
 		findings = append(findings, checkRules(role.Rules, extractNameFromKey(key), "Role", role.Namespace, role.File, &scope, true)...)
 	}
 
-	// Phase 3: NetworkPolicy analysis
+	// Phase 3: Workload security-context analysis
+	findings = append(findings, analyzeWorkloadSecurity(resources)...)
+
+	// Phase 4: NetworkPolicy analysis
 	findings = append(findings, analyzeNetworkPolicies(resources)...)
 
-	// Phase 4: Privilege chain analysis
+	// Phase 5: OpenShift SecurityContextConstraints analysis
+	findings = append(findings, analyzeSecurityContextConstraints(resources)...)
+
+	// Phase 6: External exposure analysis
+	findings = append(findings, analyzeExternalExposure(resources)...)
+
+	// Phase 7: Static Secret analysis
+	findings = append(findings, analyzeSecrets(resources)...)
+
+	// Phase 8: Privilege chain analysis
 	findings = append(findings, analyzePrivilegeChains(resources)...)
 
 	return findings
@@ -111,6 +123,53 @@ func checkRules(rules []map[string]interface{}, roleName, roleKind, namespace, f
 			}
 		}
 
+		if hasSCCUsePermission(verbs, resources, apiGroups) {
+			dedup := RuleSCCUse + "|" + roleName
+			if !seen[dedup] {
+				seen[dedup] = true
+				sev := computeSeverity(scope, hasWildcards)
+				if isNamespaced {
+					sev = capSeverity(sev, models.SeverityWarning)
+				}
+				resourceNames := toStringSlice(rule["resourceNames"])
+				target := "any SCC"
+				if len(resourceNames) > 0 {
+					target = strings.Join(resourceNames, ", ")
+				}
+				f := newFinding(RuleSCCUse, sev, file, roleKind, roleName, namespace)
+				f.Description = fmt.Sprintf("Role %q can use OpenShift SecurityContextConstraints %s", roleName, target)
+				findings = append(findings, f)
+			}
+		}
+
+		if hasCSRApprovalPermission(verbs, resources, apiGroups) {
+			dedup := RuleCSRApproval + "|" + roleName
+			if !seen[dedup] {
+				seen[dedup] = true
+				sev := computeSeverity(scope, hasWildcards)
+				if isNamespaced {
+					sev = capSeverity(sev, models.SeverityWarning)
+				}
+				f := newFinding(RuleCSRApproval, sev, file, roleKind, roleName, namespace)
+				f.Description = fmt.Sprintf("Role %q can approve or sign CertificateSigningRequests", roleName)
+				findings = append(findings, f)
+			}
+		}
+
+		if hasServiceAccountTokenPermission(verbs, resources, apiGroups) {
+			dedup := RuleServiceAccountTokenAccess + "|" + roleName
+			if !seen[dedup] {
+				seen[dedup] = true
+				sev := computeSeverity(scope, hasWildcards)
+				if isNamespaced {
+					sev = capSeverity(sev, models.SeverityWarning)
+				}
+				f := newFinding(RuleServiceAccountTokenAccess, sev, file, roleKind, roleName, namespace)
+				f.Description = fmt.Sprintf("Role %q can mint ServiceAccount tokens", roleName)
+				findings = append(findings, f)
+			}
+		}
+
 		// Check escalation combos: KC-011 (create/patch/update on roles/bindings)
 		if hasEscalationBindingCombo(verbs, resources, apiGroups) {
 			dedup := RuleEscalationBindings + "|" + roleName
@@ -179,6 +238,58 @@ func hasEscalationBindingCombo(verbs, resources, apiGroups []string) bool {
 	return apiGroupMatchesEscalationBinding(apiGroups)
 }
 
+func hasSCCUsePermission(verbs, resources, apiGroups []string) bool {
+	if !apiGroupMatchesSCC(apiGroups) {
+		return false
+	}
+	if !contains(verbs, "use") && !contains(verbs, "*") {
+		return false
+	}
+	return contains(resources, "securitycontextconstraints") || contains(resources, "*")
+}
+
+func hasCSRApprovalPermission(verbs, resources, apiGroups []string) bool {
+	if !apiGroupMatchesCSR(apiGroups) {
+		return false
+	}
+	for _, resource := range resources {
+		if resource != "*" && resource != "certificatesigningrequests" && resource != "certificatesigningrequests/approval" && resource != "certificatesigningrequests/status" && resource != "signers" {
+			continue
+		}
+		for _, verb := range verbs {
+			if verb == "*" || verb == "approve" || verb == "sign" ||
+				(resource == "*" && (verb == "update" || verb == "patch")) ||
+				(resource == "certificatesigningrequests/approval" && (verb == "update" || verb == "patch")) ||
+				(resource == "certificatesigningrequests/status" && (verb == "update" || verb == "patch")) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasServiceAccountTokenPermission(verbs, resources, apiGroups []string) bool {
+	coreGroup := false
+	for _, group := range apiGroups {
+		if group == "" || group == "*" {
+			coreGroup = true
+			break
+		}
+	}
+	if !coreGroup {
+		return false
+	}
+	for _, resource := range resources {
+		if resource != "serviceaccounts/token" && resource != "*" {
+			continue
+		}
+		if contains(verbs, "create") || contains(verbs, "*") {
+			return true
+		}
+	}
+	return false
+}
+
 // hasEscalationPodCombo returns true if verbs include "create" (or "*") AND
 // resources include pods or workload controllers, with appropriate apiGroups.
 func hasEscalationPodCombo(verbs, resources, apiGroups []string) bool {
@@ -195,7 +306,12 @@ func hasEscalationPodCombo(verbs, resources, apiGroups []string) bool {
 
 	for _, r := range resources {
 		if r == "*" {
-			return true
+			for _, group := range apiGroups {
+				if group == "*" || group == "" || group == "apps" || group == "batch" || group == "apps.openshift.io" {
+					return true
+				}
+			}
+			continue
 		}
 		if escalationWorkloadResources[r] && apiGroupMatchesEscalationWorkload(apiGroups, r) {
 			return true

@@ -282,6 +282,191 @@ spec:
 	}
 }
 
+func TestLoadOpenShiftSecurityAndWorkloadResources(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifest := `apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: restricted
+allowPrivilegedContainer: false
+---
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  name: web
+  namespace: production
+spec:
+  template:
+    spec:
+      serviceAccountName: web
+      containers:
+      - name: web
+        image: nginx
+---
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: worker
+  namespace: production
+spec:
+  template:
+    spec:
+      containers:
+      - name: worker
+        image: busybox
+---
+apiVersion: example.com/v1
+kind: DeploymentConfig
+metadata:
+  name: custom
+  namespace: production
+spec:
+  template:
+    spec:
+      containers: []
+---
+apiVersion: example.com/v1
+kind: Pod
+metadata:
+  name: custom-pod
+  namespace: production
+spec:
+  containers:
+  - name: app
+    image: nginx
+---
+apiVersion: example.com/v1
+kind: Deployment
+metadata:
+  name: custom-deployment
+  namespace: production
+spec:
+  template:
+    spec:
+      containers:
+      - name: app
+        image: nginx
+`
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "openshift.yaml"), []byte(manifest), 0o644))
+
+	result, err := LoadManifests([]string{tmpDir}, nil)
+	require.NoError(t, err)
+
+	assert.Contains(t, result.SecurityContextConstraints, "restricted")
+	assert.Contains(t, result.Workloads, "DeploymentConfig/production/web")
+	assert.Contains(t, result.Workloads, "ReplicationController/production/worker")
+	assert.NotContains(t, result.Workloads, "DeploymentConfig/production/custom")
+	assert.NotContains(t, result.Pods, "production/custom-pod")
+	assert.NotContains(t, result.Workloads, "Deployment/production/custom-deployment")
+}
+
+func TestLoadExposureAndSecretResources(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifest := `apiVersion: v1
+kind: Service
+metadata:
+  name: public
+  namespace: production
+spec:
+  type: LoadBalancer
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: production
+spec:
+  rules:
+  - host: example.com
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: web
+  namespace: production
+spec:
+  to:
+    kind: Service
+    name: web
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: credentials
+  namespace: production
+type: kubernetes.io/basic-auth
+data:
+  username: dXNlcg==
+  password: c2VjcmV0
+---
+apiVersion: example.com/v1
+kind: Service
+metadata:
+  name: custom
+  namespace: production
+spec:
+  type: LoadBalancer
+`
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "exposure.yaml"), []byte(manifest), 0o644))
+
+	result, err := LoadManifests([]string{tmpDir}, nil)
+	require.NoError(t, err)
+	assert.Contains(t, result.Services, "production/public")
+	assert.Contains(t, result.Ingresses, "production/web")
+	assert.Contains(t, result.Routes, "production/web")
+	assert.Contains(t, result.Secrets, "production/credentials")
+	assert.NotContains(t, result.Services, "production/custom")
+}
+
+func TestLoaderDefaultsNamespaceAndLegacyServiceAccountField(t *testing.T) {
+	tmpDir := t.TempDir()
+	manifest := `apiVersion: v1
+kind: Pod
+metadata:
+  name: pod
+spec:
+  serviceAccount: legacy
+  containers:
+  - name: app
+    image: nginx
+--- # next document
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment
+spec:
+  template:
+    spec:
+      serviceAccount: legacy
+      containers:
+      - name: app
+        image: nginx
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reader
+rules: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reader
+roleRef:
+  kind: Role
+  name: reader
+  apiGroup: rbac.authorization.k8s.io
+`
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "defaults.yaml"), []byte(manifest), 0o644))
+
+	result, err := LoadManifests([]string{tmpDir}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "legacy", result.Pods["default/pod"].ServiceAccountName)
+	assert.Equal(t, "legacy", result.Workloads["Deployment/default/deployment"].ServiceAccountName)
+	assert.Contains(t, result.Roles, "default/reader")
+	assert.Equal(t, "default", result.RoleBindings[0].Namespace)
+}
+
 func TestCustomExcludes(t *testing.T) {
 	tmpDir := t.TempDir()
 

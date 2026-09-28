@@ -198,7 +198,7 @@ items:
 	assert.True(t, has, "expected nested-role from nested List")
 }
 
-func TestListUnwrappingNonRBACItemsSkipped(t *testing.T) {
+func TestListUnwrappingUnsupportedItemsSkipped(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "non-rbac.yaml"), []byte(`
@@ -224,7 +224,7 @@ items:
 
 	result, err := LoadManifests([]string{tmpDir}, nil)
 	require.NoError(t, err)
-	assert.True(t, result.IsEmpty(), "non-RBAC items in List should be skipped")
+	assert.Contains(t, result.Services, "default/some-service", "supported Service items should be loaded")
 }
 
 func TestListUnwrappingWithDirectResources(t *testing.T) {
@@ -543,6 +543,9 @@ func TestLoadFromClusterFetchesNetworkPolicies(t *testing.T) {
 	argsFile := filepath.Join(tmpDir, "kubectl-args")
 	script := `#!/bin/sh
 printf '%s\n' "$@" >> "$KUBECTL_ARGS_FILE"
+if [ "$1" = "api-resources" ]; then
+  exit 0
+fi
 if [ "$2" = "clusterroles,clusterrolebindings" ]; then
   printf '%s\n' 'apiVersion: v1' 'kind: List' 'items: []'
   exit 0
@@ -565,6 +568,65 @@ printf '%s\n' 'apiVersion: networking.k8s.io/v1' 'kind: NetworkPolicyList' 'item
 	args, err := os.ReadFile(argsFile)
 	require.NoError(t, err)
 	assert.Contains(t, string(args), "networkpolicies")
-	assert.True(t, strings.Contains(string(args), "pods,networkpolicies"),
+	assert.True(t, strings.Contains(string(args), "services,ingresses,deployments,daemonsets,statefulsets,jobs,cronjobs,replicasets,replicationcontrollers,pods,networkpolicies"),
 		"expected NetworkPolicies in the namespaced kubectl resource request")
+	assert.NotContains(t, string(args), "secrets")
+}
+
+func TestLoadFromClusterFetchesOpenShiftResourcesWhenAvailable(t *testing.T) {
+	tmpDir := t.TempDir()
+	script := `#!/bin/sh
+if [ "$1" = "api-resources" ]; then
+  if [ "$3" = "security.openshift.io" ]; then
+    printf '%s\n' 'securitycontextconstraints.security.openshift.io'
+  else
+    printf '%s\n' 'deploymentconfigs.apps.openshift.io'
+  fi
+  exit 0
+fi
+if [ "$2" = "securitycontextconstraints" ]; then
+  printf '%s\n' 'apiVersion: security.openshift.io/v1' 'kind: SecurityContextConstraintsList' 'items:' '- apiVersion: security.openshift.io/v1' '  kind: SecurityContextConstraints' '  metadata:' '    name: restricted' '  allowPrivilegedContainer: false'
+  exit 0
+fi
+if [ "$2" = "deploymentconfigs" ]; then
+  printf '%s\n' 'apiVersion: apps.openshift.io/v1' 'kind: DeploymentConfigList' 'items:' '- apiVersion: apps.openshift.io/v1' '  kind: DeploymentConfig' '  metadata:' '    name: web' '    namespace: production' '  spec:' '    template:' '      spec:' '        containers:' '        - name: web' '          image: nginx'
+  exit 0
+fi
+printf '%s\n' 'apiVersion: v1' 'kind: List' 'items: []'
+`
+	kubectlPath := filepath.Join(tmpDir, "kubectl")
+	require.NoError(t, os.WriteFile(kubectlPath, []byte(script), 0o755))
+	t.Setenv("PATH", tmpDir)
+
+	resources, err := LoadFromCluster(ClusterOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, resources.SecurityContextConstraints, "restricted")
+	assert.Contains(t, resources.Workloads, "DeploymentConfig/production/web")
+}
+
+func TestLoadFromClusterSkipsUnavailableOptionalResources(t *testing.T) {
+	tmpDir := t.TempDir()
+	script := `#!/bin/sh
+if [ "$1" = "api-resources" ]; then
+  printf '%s\n' 'securitycontextconstraints.security.openshift.io'
+  exit 0
+fi
+if [ "$2" = "securitycontextconstraints" ]; then
+  exit 1
+fi
+printf '%s\n' 'apiVersion: v1' 'kind: List' 'items: []'
+`
+	kubectlPath := filepath.Join(tmpDir, "kubectl")
+	require.NoError(t, os.WriteFile(kubectlPath, []byte(script), 0o755))
+	t.Setenv("PATH", tmpDir)
+
+	resources, err := LoadFromCluster(ClusterOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, resources.SecurityContextConstraints)
+}
+
+func TestOptionalResourceAvailable(t *testing.T) {
+	assert.True(t, optionalResourceAvailable("securitycontextconstraints.security.openshift.io\n", "securitycontextconstraints", "security.openshift.io"))
+	assert.True(t, optionalResourceAvailable("deploymentconfigs\n", "deploymentconfigs", "apps.openshift.io"))
+	assert.False(t, optionalResourceAvailable("routes.route.openshift.io\n", "deploymentconfigs", "apps.openshift.io"))
 }

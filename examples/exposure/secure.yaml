@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: internal-api
+  namespace: production
+spec:
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: secure-api
+  namespace: production
+spec:
+  tls:
+  - hosts:
+    - api.example.com
+    secretName: api-tls
+  rules:
+  - host: api.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: internal-api
+            port:
+              number: 8443
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: secure-api
+  namespace: production
+spec:
+  host: api.example.com
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  to:
+    kind: Service
+    name: internal-api

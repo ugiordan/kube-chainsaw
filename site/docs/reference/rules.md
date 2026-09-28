@@ -1,6 +1,6 @@
 # Detection Rules
 
-kube-chainsaw implements 18 static analysis rules to detect RBAC misconfigurations, privilege escalation paths, and broad NetworkPolicy peers.
+kube-chainsaw implements 31 static analysis rules to detect RBAC misconfigurations, privilege escalation paths, broad NetworkPolicy peers, dangerous workload settings, external exposure, credential manifests, and OpenShift SCC risks.
 
 ---
 
@@ -455,6 +455,162 @@ spec:
 
 ---
 
+## KC-019: Privileged Container Requested
+
+**Severity:** HIGH
+
+**Description:** Detects containers, init containers, or ephemeral containers that explicitly request `securityContext.privileged: true`.
+
+**Impact:** A privileged container can bypass normal container isolation and access host-level capabilities.
+
+**Recommendation:** Remove privileged mode. If host-level access is required, isolate the workload and use the narrowest approved security policy.
+
+---
+
+## KC-020: Host Namespace Access Requested
+
+**Severity:** HIGH
+
+**Description:** Detects Pods and workload templates that enable `hostNetwork`, `hostPID`, or `hostIPC`.
+
+**Impact:** Sharing host namespaces exposes host networking or process and IPC state to the workload.
+
+**Recommendation:** Disable host namespace sharing unless the workload is trusted infrastructure with a documented requirement.
+
+---
+
+## KC-021: HostPath Volume Requested
+
+**Severity:** WARNING or HIGH
+
+**Description:** Detects `hostPath` volumes. Sensitive paths such as `/`, `/etc`, `/proc`, `/sys`, `/var/run`, and kubelet or container runtime directories produce HIGH findings.
+
+**Impact:** HostPath mounts can expose host files, sockets, credentials, or container runtime state.
+
+**Recommendation:** Prefer ConfigMaps, Secrets, PersistentVolumeClaims, or projected volumes. Restrict host paths and access when unavoidable.
+
+---
+
+## KC-022: Dangerous Linux Capability Requested
+
+**Severity:** WARNING or HIGH
+
+**Description:** Detects added capabilities such as `NET_RAW`, `NET_ADMIN`, `SYS_PTRACE`, `SYS_ADMIN`, `SYS_MODULE`, `DAC_READ_SEARCH`, or `ALL`.
+
+**Impact:** Added capabilities can bypass filesystem, networking, process, or kernel isolation.
+
+**Recommendation:** Drop all unnecessary capabilities and add only the single capability required by the workload.
+
+---
+
+## KC-023: OpenShift SecurityContextConstraints Use Permission
+
+**Severity:** Varies by binding scope
+
+**Description:** Detects RBAC `use` permissions for `securitycontextconstraints` in the `security.openshift.io` API group.
+
+**Impact:** SCC use permissions can allow a principal to request privileged containers, host namespaces, broad capabilities, or host volumes, depending on the named SCC.
+
+**Recommendation:** Restrict `use` to named SCCs and trusted administrative identities. Avoid wildcard SCC resources and API groups.
+
+---
+
+## KC-024: Permissive OpenShift SecurityContextConstraints Assignment
+
+**Severity:** HIGH for broad subjects, otherwise WARNING
+
+**Description:** Detects permissive SCC settings assigned directly to users or groups. Unassigned built-in SCCs are not reported because their effective risk depends on RBAC `use` permissions.
+
+**Impact:** Broad assignments such as `system:authenticated` can let most cluster users request privileged or host-integrated workloads.
+
+**Recommendation:** Assign restrictive SCCs to narrow service accounts or groups and review privileged SCC use through RBAC.
+
+---
+
+## KC-025: External Service Exposure
+
+**Severity:** WARNING
+
+**Description:** Detects Services using `LoadBalancer`, `NodePort`, or `ExternalName`, or declaring `externalIPs`.
+
+**Impact:** These declarations can make a Service reachable outside its cluster-internal boundary.
+
+**Recommendation:** Restrict exposure to intentional entry points and document the required network controls.
+
+---
+
+## KC-026: Unencrypted External Route
+
+**Severity:** WARNING or HIGH
+
+**Description:** Detects Ingress or OpenShift Route declarations without TLS. Routes that set `insecureEdgeTerminationPolicy: Allow` produce HIGH findings.
+
+**Impact:** Plaintext traffic can expose credentials and application data. This is a declared-manifest finding and does not determine whether an upstream proxy terminates TLS.
+
+**Recommendation:** Configure TLS termination and reject or redirect plaintext traffic.
+
+---
+
+## KC-027: Broad External Route
+
+**Severity:** WARNING
+
+**Description:** Detects Ingress catch-all or wildcard hosts and OpenShift Routes with `wildcardPolicy: Subdomain`.
+
+**Impact:** Broad host matching can route unintended domains or subdomains to a workload.
+
+**Recommendation:** Use explicit hosts unless wildcard routing is intentional and controlled.
+
+---
+
+## KC-028: Credential Material in Secret Manifest
+
+**Severity:** WARNING
+
+**Description:** Detects credential-bearing Secret types or sensitive key names in static manifests. Secret values are never included in findings.
+
+**Impact:** Base64 in a Secret manifest is encoding, not encryption. Repository readers or build logs may access the credential material.
+
+**Recommendation:** Use an external Secret manager or sealed/encrypted workflow and avoid committing plaintext credential material.
+
+---
+
+## KC-029: Long-lived ServiceAccount Token Secret
+
+**Severity:** HIGH
+
+**Description:** Detects `kubernetes.io/service-account-token` Secrets and token Secrets associated with a ServiceAccount.
+
+**Impact:** Persisted token Secrets are long-lived credentials that can survive workload rotation.
+
+**Recommendation:** Use short-lived projected ServiceAccount tokens or the TokenRequest API instead.
+
+---
+
+## KC-030: ServiceAccount Token Minting Permission
+
+**Severity:** Varies by binding scope
+
+**Description:** Detects RBAC access to the core `serviceaccounts/token` subresource.
+
+**Impact:** A principal with this access can request tokens for ServiceAccounts and potentially act as those identities.
+
+**Recommendation:** Restrict `serviceaccounts/token` access to narrowly scoped automation.
+
+---
+
+## KC-031: CertificateSigningRequest Approval or Signing Permission
+
+**Severity:** Varies by binding scope
+
+**Description:** Detects RBAC permissions that can approve or sign Kubernetes CertificateSigningRequests.
+
+**Impact:** Certificate approval or signing can create trusted client or serving identities.
+
+**Recommendation:** Restrict CSR approval and signing to the cluster certificate controllers and administrators.
+
+---
+
 ## Rule Severity Model
 
 Finding severity is dynamic, based on how the role is bound:
@@ -474,6 +630,12 @@ Special cases:
 - KC-014 (RoleBinding to ClusterRole) is always WARNING
 - KC-015 (aggregated ClusterRole) is always INFO
 - KC-017 and KC-018 are HIGH when the policy selects all pods in its namespace, otherwise WARNING
+- KC-019 and KC-020 are always HIGH
+- KC-021 and KC-022 are HIGH only for sensitive paths or high-risk capabilities, otherwise WARNING
+- KC-024 is HIGH for broad SCC subjects, otherwise WARNING
+- KC-025 and KC-027 are WARNING
+- KC-026 is HIGH for `insecureEdgeTerminationPolicy: Allow`, otherwise WARNING
+- KC-028 is WARNING and KC-029 is HIGH
 
 ---
 

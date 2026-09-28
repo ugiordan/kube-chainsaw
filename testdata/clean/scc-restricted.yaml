@@ -1,0 +1,24 @@
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: application-restricted
+allowPrivilegedContainer: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostIPC: false
+allowHostDirVolumePlugin: false
+allowHostPorts: false
+allowPrivilegeEscalation: false
+defaultAllowPrivilegeEscalation: false
+allowedCapabilities: []
+seccompProfiles:
+- runtime/default
+volumes:
+- configMap
+- emptyDir
+runAsUser:
+  type: MustRunAsRange
+seLinuxContext:
+  type: MustRunAs
+groups:
+- system:serviceaccounts:production

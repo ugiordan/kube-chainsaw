@@ -114,7 +114,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// Warn when no supported security-relevant resources are found.
 	if resources.IsEmpty() {
-		fmt.Fprintln(os.Stderr, "WARNING: no supported security-relevant resources found in the scanned paths. Verify the paths contain Kubernetes RBAC or NetworkPolicy manifests.")
+		fmt.Fprintln(os.Stderr, "WARNING: no supported security-relevant resources found in the scanned paths. Verify the paths contain RBAC, workload security, NetworkPolicy, exposure, Secret, or OpenShift SCC manifests.")
 	}
 
 	// Step 2: Analyze

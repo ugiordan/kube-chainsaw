@@ -115,6 +115,11 @@ func broadNetworkPolicyPeers(rawRules interface{}, peerKey, subject string) []st
 			if selector, ok := asStringMap(peer["namespaceSelector"]); ok && selectorSelectsAll(selector) {
 				reasons = appendUnique(reasons, "a namespaceSelector matches pods in all namespaces")
 			}
+			if selector, ok := asStringMap(peer["podSelector"]); ok && selectorSelectsAll(selector) {
+				if _, hasNamespaceSelector := peer["namespaceSelector"]; !hasNamespaceSelector {
+					reasons = appendUnique(reasons, "a podSelector matches all pods in the policy namespace")
+				}
+			}
 
 			if ipBlock, ok := asStringMap(peer["ipBlock"]); ok && ipBlockMatchesAllIPs(ipBlock) {
 				reasons = appendUnique(reasons, "an ipBlock matches all IP addresses")

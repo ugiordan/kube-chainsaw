@@ -30,16 +30,18 @@ var DefaultExcludeDirs = map[string]bool{
 var goTemplateRe = regexp.MustCompile(`\{\{[^}]+\}\}`)
 
 // yamlDocSepRe matches YAML document separators at the start of a line.
-var yamlDocSepRe = regexp.MustCompile(`(?m)^---\s*$`)
+var yamlDocSepRe = regexp.MustCompile(`(?m)^---(?:[ \t]+#.*)?[ \t]*$`)
 
 // workloadKinds lists Kubernetes workload controller kinds we parse.
 var workloadKinds = map[string]bool{
-	"Deployment":  true,
-	"DaemonSet":   true,
-	"StatefulSet": true,
-	"Job":         true,
-	"CronJob":     true,
-	"ReplicaSet":  true,
+	"Deployment":            true,
+	"DaemonSet":             true,
+	"StatefulSet":           true,
+	"Job":                   true,
+	"CronJob":               true,
+	"ReplicaSet":            true,
+	"ReplicationController": true,
+	"DeploymentConfig":      true,
 }
 
 // Options configures the manifest loader.
@@ -237,6 +239,9 @@ func categorize(doc map[string]interface{}, file string, result *models.LoadedRe
 	}
 	name, _ := metadata["name"].(string)
 	namespace, _ := metadata["namespace"].(string)
+	if namespace == "" && namespacedKind(kind) {
+		namespace = "default"
+	}
 
 	switch kind {
 	case "ClusterRole":
@@ -285,7 +290,75 @@ func categorize(doc map[string]interface{}, file string, result *models.LoadedRe
 			Doc:       doc,
 		}
 
+	case "Service":
+		apiVersion, _ := doc["apiVersion"].(string)
+		if apiVersion != "v1" {
+			return
+		}
+		key := namespace + "/" + name
+		if _, exists := result.Services[key]; exists {
+			fmt.Fprintf(os.Stderr, "warning: duplicate Service %q found in %s, previous entry will be overwritten\n", key, file)
+		}
+		result.Services[key] = &models.ServiceData{
+			Name:      name,
+			Namespace: namespace,
+			File:      file,
+			Doc:       doc,
+		}
+
+	case "Ingress":
+		apiVersion, _ := doc["apiVersion"].(string)
+		if apiVersion != "networking.k8s.io/v1" {
+			return
+		}
+		key := namespace + "/" + name
+		if _, exists := result.Ingresses[key]; exists {
+			fmt.Fprintf(os.Stderr, "warning: duplicate Ingress %q found in %s, previous entry will be overwritten\n", key, file)
+		}
+		result.Ingresses[key] = &models.IngressData{
+			Name:      name,
+			Namespace: namespace,
+			File:      file,
+			Doc:       doc,
+		}
+
+	case "Route":
+		apiVersion, _ := doc["apiVersion"].(string)
+		if apiVersion != "route.openshift.io/v1" {
+			return
+		}
+		key := namespace + "/" + name
+		if _, exists := result.Routes[key]; exists {
+			fmt.Fprintf(os.Stderr, "warning: duplicate Route %q found in %s, previous entry will be overwritten\n", key, file)
+		}
+		result.Routes[key] = &models.RouteData{
+			Name:      name,
+			Namespace: namespace,
+			File:      file,
+			Doc:       doc,
+		}
+
+	case "Secret":
+		apiVersion, _ := doc["apiVersion"].(string)
+		if apiVersion != "v1" {
+			return
+		}
+		key := namespace + "/" + name
+		if _, exists := result.Secrets[key]; exists {
+			fmt.Fprintf(os.Stderr, "warning: duplicate Secret %q found in %s, previous entry will be overwritten\n", key, file)
+		}
+		result.Secrets[key] = &models.SecretData{
+			Name:      name,
+			Namespace: namespace,
+			File:      file,
+			Doc:       doc,
+		}
+
 	case "Pod":
+		apiVersion, _ := doc["apiVersion"].(string)
+		if !supportedWorkloadAPIVersion(kind, apiVersion) {
+			return
+		}
 		saName := extractServiceAccountName(doc)
 		key := namespace + "/" + name
 		if _, exists := result.Pods[key]; exists {
@@ -315,9 +388,24 @@ func categorize(doc map[string]interface{}, file string, result *models.LoadedRe
 			Doc:       doc,
 		}
 
+	case "SecurityContextConstraints":
+		apiVersion, _ := doc["apiVersion"].(string)
+		if apiVersion != "security.openshift.io/v1" {
+			return
+		}
+		if _, exists := result.SecurityContextConstraints[name]; exists {
+			fmt.Fprintf(os.Stderr, "warning: duplicate SecurityContextConstraints %q found in %s, previous entry will be overwritten\n", name, file)
+		}
+		result.SecurityContextConstraints[name] = &models.SecurityContextConstraintsData{
+			Name: name,
+			File: file,
+			Doc:  doc,
+		}
+
 	default:
 		// Finding 5: parse workload controllers
-		if workloadKinds[kind] {
+		apiVersion, _ := doc["apiVersion"].(string)
+		if workloadKinds[kind] && supportedWorkloadAPIVersion(kind, apiVersion) {
 			saName := extractWorkloadServiceAccountName(doc, kind)
 			// NEW-2: include Kind in key to prevent cross-kind collisions
 			key := kind + "/" + namespace + "/" + name
@@ -333,6 +421,30 @@ func categorize(doc map[string]interface{}, file string, result *models.LoadedRe
 				Doc:                doc,
 			}
 		}
+	}
+}
+
+func supportedWorkloadAPIVersion(kind, apiVersion string) bool {
+	switch kind {
+	case "Pod", "ReplicationController":
+		return apiVersion == "v1"
+	case "Deployment", "DaemonSet", "StatefulSet", "ReplicaSet":
+		return apiVersion == "apps/v1"
+	case "Job", "CronJob":
+		return apiVersion == "batch/v1"
+	case "DeploymentConfig":
+		return apiVersion == "apps.openshift.io/v1"
+	default:
+		return true
+	}
+}
+
+func namespacedKind(kind string) bool {
+	switch kind {
+	case "Role", "RoleBinding", "ServiceAccount", "Service", "Ingress", "Route", "Secret", "Pod", "NetworkPolicy", "Deployment", "DaemonSet", "StatefulSet", "Job", "CronJob", "ReplicaSet", "ReplicationController", "DeploymentConfig":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -388,6 +500,9 @@ func extractServiceAccountName(doc map[string]interface{}) string {
 
 	saName, ok := spec["serviceAccountName"].(string)
 	if !ok || saName == "" {
+		saName, ok = spec["serviceAccount"].(string)
+	}
+	if !ok || saName == "" {
 		return "default"
 	}
 	return saName
@@ -425,6 +540,9 @@ func extractWorkloadServiceAccountName(doc map[string]interface{}, kind string) 
 	}
 
 	saName, ok := podSpec["serviceAccountName"].(string)
+	if !ok || saName == "" {
+		saName, ok = podSpec["serviceAccount"].(string)
+	}
 	if !ok || saName == "" {
 		return "default"
 	}
