@@ -81,7 +81,12 @@ nav:
     - Suppressions: guides/suppressions.md
   - Reference:
     - CLI Commands: reference/cli.md
-    - Detection Rules: reference/rules.md
+    - Detection Rules:
+      - Overview: reference/rules.md
+      - RBAC and Privileges: reference/rules/rbac.md
+      - Network and Exposure: reference/rules/network.md
+      - Workloads and OpenShift: reference/rules/workload.md
+      - Secrets and Certificates: reference/rules/secrets.md
     - Output Formats: reference/output-formats.md
     - Go Library: reference/go-api.md
   - Architecture:

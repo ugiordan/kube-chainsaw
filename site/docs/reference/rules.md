@@ -2,6 +2,17 @@
 
 kube-chainsaw implements 31 static analysis rules to detect RBAC misconfigurations, privilege escalation paths, broad NetworkPolicy peers, dangerous workload settings, external exposure, credential manifests, and OpenShift SCC risks.
 
+## Rule Groups
+
+Use the sidebar to browse rules by security area:
+
+| Group | Rules |
+|---|---|
+| [RBAC and Privileges](rules/rbac.md) | KC-001 to KC-015 |
+| [Network and Exposure](rules/network.md) | KC-016 to KC-018, KC-025 to KC-027 |
+| [Workloads and OpenShift](rules/workload.md) | KC-019 to KC-024 |
+| [Secrets and Certificates](rules/secrets.md) | KC-028 to KC-031 |
+
 ---
 
 ## KC-001: Wildcard Resource Access
