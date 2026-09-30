@@ -217,7 +217,7 @@ Severity is computed dynamically based on binding scope (see `computeSeverity` i
 
 ## Documentation
 
-Add a rule description to `site/docs/reference/rules.md`:
+Add a rule description to the appropriate security-area page under `site/docs/reference/rules/` (`rbac.md`, `network.md`, `workload.md`, or `secrets.md`), and add a row to the matching table in that page plus the rule index in `site/docs/reference/rules.md`:
 
 ```markdown
 ## KC-019: Pod Eviction Permission
@@ -252,7 +252,7 @@ Before submitting a PR:
 - [ ] All tests pass (`go test ./...`)
 - [ ] Code formatted (`go fmt ./...`)
 - [ ] Linting passes (`go vet ./...`)
-- [ ] Documentation added to `rules.md`
+- [ ] Documentation added to the appropriate `site/docs/reference/rules/` page and to the `site/docs/reference/rules.md` rule index
 
 ---
 
