@@ -558,14 +558,33 @@ func getRoleRefKind(roleRef map[string]interface{}) string {
 	return kind
 }
 
+// bindingReferencesSubject reports whether the binding grants permissions to
+// the given service account. Besides a direct ServiceAccount subject, the
+// implicit identities of every service account are considered: the
+// system:serviceaccounts:<namespace> group, the system:serviceaccounts and
+// system:authenticated groups, and the
+// system:serviceaccount:<namespace>:<name> user.
 func bindingReferencesSubject(binding *models.BindingData, saName, saNamespace string) bool {
+	saUser := "system:serviceaccount:" + saNamespace + ":" + saName
+	nsGroup := "system:serviceaccounts:" + saNamespace
 	for _, subj := range binding.Subjects {
 		kind, _ := subj["kind"].(string)
 		name, _ := subj["name"].(string)
 		ns, _ := subj["namespace"].(string)
 
-		if kind == "ServiceAccount" && name == saName && ns == saNamespace {
-			return true
+		switch kind {
+		case "ServiceAccount":
+			if name == saName && ns == saNamespace {
+				return true
+			}
+		case "User":
+			if name == saUser {
+				return true
+			}
+		case "Group":
+			if name == nsGroup || name == "system:serviceaccounts" || name == "system:authenticated" {
+				return true
+			}
 		}
 	}
 	return false
