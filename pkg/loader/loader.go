@@ -94,8 +94,7 @@ func LoadManifests(paths []string, opts *Options) (*models.LoadedResources, erro
 			}
 		} else {
 			if err := processFile(p, opts, result); err != nil {
-				// Skip files that fail to parse (non-fatal)
-				continue
+				return nil, fmt.Errorf("loading %s: %w", p, err)
 			}
 		}
 	}
@@ -197,7 +196,7 @@ func processFile(path string, opts *Options, result *models.LoadedResources) err
 
 		var parsed map[string]interface{}
 		if err := yaml.Unmarshal([]byte(doc), &parsed); err != nil {
-			continue // skip unparseable documents
+			return fmt.Errorf("parsing document in %s: %w", path, err)
 		}
 
 		if parsed == nil {
